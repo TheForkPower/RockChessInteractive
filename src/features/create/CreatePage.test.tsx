@@ -367,3 +367,27 @@ describe("Create page: making a deck", () => {
     expect(await screen.findByText(/Once already has a card with that position/)).toBeInTheDocument();
   });
 });
+
+describe("Create page: the board editor", () => {
+  it("opens the editor, and a position set up there becomes the position to build from", async () => {
+    renderPage();
+    await click("Set up the board by hand");
+    expect(screen.getByRole("heading", { level: 1, name: "Board editor" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /^e2,/ }));
+    await userEvent.click(screen.getByRole("button", { name: /^e4,/ }));
+    await userEvent.click(screen.getByRole("radio", { name: "Black to move" }));
+    await click("Use this position");
+    expect(screen.getByRole("heading", { level: 1, name: "Create cards" })).toBeInTheDocument();
+    expect(board()).toHaveAttribute("data-fen", AFTER_E4);
+    expect(fenField().value).toBe(AFTER_E4);
+  });
+
+  it("cancelling leaves the position as it was", async () => {
+    renderPage();
+    await click("Set up the board by hand");
+    await userEvent.click(screen.getByRole("button", { name: /^e2,/ }));
+    await userEvent.click(screen.getByRole("button", { name: /^e4,/ }));
+    await click("Cancel");
+    expect(board()).toHaveAttribute("data-fen", START_FEN);
+  });
+});

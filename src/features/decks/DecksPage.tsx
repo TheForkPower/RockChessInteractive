@@ -1,6 +1,8 @@
 import { useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router";
 import { deleteCard, deleteDeck, renameDeck, STORAGE_ERROR, updateCard } from "../../data/repo";
+import { restoreTutorialDeck } from "../../data/seed";
+import { TUTORIAL_DECK_NAME } from "../../data/tutorialDeck";
 import { useCards, useDecks } from "../../data/hooks";
 import { answerText, CATEGORIES, cardToDraft, type Card, type CardDraft } from "../../domain/cards";
 import { Button, ButtonLink } from "../../ui/Button";
@@ -15,12 +17,15 @@ function cardSummary(card: Card): string {
   return card.kind === "move" ? `Answer: ${answer}` : `Line: ${answer}`;
 }
 
+const EMBER_GRADIENT = "linear-gradient(135deg, var(--color-ember), var(--color-ember-deep))";
+
 export function DecksPage() {
   const [params, setParams] = useSearchParams();
   const decks = useDecks();
   const requested = params.get("deck");
   const deck = decks?.find((item) => item.id === requested) ?? decks?.[0] ?? null;
   const cards = useCards(deck?.id ?? null);
+  const tutorial = deck?.theme === "tutorial";
 
   const [openId, setOpenId] = useState<string | null>(null);
   const [editing, setEditing] = useState<Card | null>(null);
@@ -37,6 +42,13 @@ export function DecksPage() {
     } catch {
       setProblem(STORAGE_ERROR);
     }
+  }
+
+  async function addStarterDeck() {
+    await guard(async () => {
+      const added = await restoreTutorialDeck();
+      setParams({ deck: added.id });
+    });
   }
 
   function pickDeck(id: string) {
@@ -100,10 +112,20 @@ export function DecksPage() {
     return (
       <div>
         <PageHeader title="Decks">You have no decks yet. A deck appears when you save your first card.</PageHeader>
-        <div className="mt-8">
+        {problem ? (
+          <div className="mt-6 max-w-xl">
+            <Feedback tone="bad" title="That didn't work">
+              {problem}
+            </Feedback>
+          </div>
+        ) : null}
+        <div className="mt-8 flex flex-wrap gap-3">
           <ButtonLink to="/create" size="lg">
             Create cards
           </ButtonLink>
+          <Button variant="secondary" size="lg" onClick={addStarterDeck}>
+            Add the {TUTORIAL_DECK_NAME} deck
+          </Button>
         </div>
       </div>
     );
@@ -146,16 +168,26 @@ export function DecksPage() {
                     item.id === deck?.id ? "border-brand bg-brand-wash" : "border-line bg-surface hover:bg-line/40",
                   ].join(" ")}
                 >
-                  <span className="font-display font-bold">{item.name}</span>
+                  <span className="flex items-center gap-2 font-display font-bold">
+                    {item.theme === "tutorial" ? (
+                      <span aria-hidden="true" className="h-3 w-3 shrink-0 rounded-full" style={{ background: EMBER_GRADIENT }} />
+                    ) : null}
+                    {item.name}
+                  </span>
                   <span className="text-sm text-ink-soft">{item.cardCount}</span>
                 </button>
               </li>
             ))}
           </ul>
-          <div className="mt-5">
+          <div className="mt-5 flex flex-wrap gap-3 lg:flex-col lg:items-start">
             <ButtonLink to="/create" variant="secondary">
               Create cards
             </ButtonLink>
+            {decks.some((item) => item.theme === "tutorial") ? null : (
+              <Button variant="secondary" onClick={addStarterDeck}>
+                Add the {TUTORIAL_DECK_NAME} deck
+              </Button>
+            )}
           </div>
         </nav>
 
@@ -192,12 +224,23 @@ export function DecksPage() {
                 </Button>
               </form>
             ) : (
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div>
+              <div
+                className={
+                  tutorial
+                    ? "flex flex-wrap items-center justify-between gap-5 rounded-3xl px-6 py-6 text-white shadow-[0_4px_0_var(--color-ember-deep)] sm:px-8"
+                    : "flex flex-wrap items-center justify-between gap-4"
+                }
+                style={tutorial ? { background: EMBER_GRADIENT } : undefined}
+              >
+                <div className="min-w-0">
+                  {tutorial ? <p className="text-sm font-semibold text-white/90">Starter deck</p> : null}
                   <h2 id="deck-heading" className="text-3xl font-bold">
                     {deck.name}
                   </h2>
-                  <p className="mt-1 text-ink-soft">{deck.cardCount === 1 ? "1 card" : `${deck.cardCount} cards`}</p>
+                  {tutorial && deck.description ? <p className="mt-2 max-w-prose">{deck.description}</p> : null}
+                  <p className={tutorial ? "mt-2 text-white/90" : "mt-1 text-ink-soft"}>
+                    {deck.cardCount === 1 ? "1 card" : `${deck.cardCount} cards`}
+                  </p>
                 </div>
                 <div className="flex flex-wrap gap-3">
                   <Button variant="secondary" onClick={() => setRenaming(deck.name)}>
@@ -247,7 +290,13 @@ export function DecksPage() {
             ) : cards.length === 0 ? (
               <p className="mt-8 text-ink-soft">This deck has no cards. Make some on the Create page.</p>
             ) : (
-              <ul className="mt-8 space-y-4">
+              <ul
+                className={
+                  tutorial
+                    ? "mt-6 space-y-4 rounded-3xl border-2 border-ember-line bg-ember-wash p-4 sm:p-5"
+                    : "mt-8 space-y-4"
+                }
+              >
                 {cards.map((card) => {
                   const open = openId === card.id;
                   const category = CATEGORIES.find((option) => option.value === card.category)?.label;

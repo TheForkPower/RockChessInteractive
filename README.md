@@ -42,7 +42,9 @@ The `/design` page shows every colour, type style and button.
 
 - **Create** (`/create`): set a position with a FEN, type or paste moves, paste or open a PGN (several games are fine), or play on the board. Everything goes into one move tree, so comments and variations are kept. From any position you can make a card, or turn the whole line into a deck (a card for each of your moves, or one card for the line).
 - **Cards** hold a position, a question, an answer (one move, or a line), other accepted moves, an explanation, notes, and a PGN continuation. The continuation keeps the PGN's variations and comments, and every move in it is clickable.
+- **Board editor** (Create, then "Set up the board by hand"): place and remove pieces, move them about, set whose turn it is, tick castling rights (only offered while the king and rook are at home) and the move number. It checks the position the same way as a pasted FEN, and "Use this position" makes it the start of the line.
 - **Decks** (`/decks`): list, open, edit, delete and rename. Everything is saved in the browser's IndexedDB.
+- **Famous moves**: a starter deck of ten cards from well-known games (Légal, Anderssen, Morphy, Lasker, Réti, Byrne v Fischer, Deep Blue, Kasparov v Topalov) with an orange and red banner. It is added on the first visit, can be edited or deleted like any deck, and is not added again once deleted. The Decks page offers a button to add it back. The cards are ordinary cards, so they will be reviewable once M3 exists. The moves are checked against chess.js in `src/data/tutorialDeck.test.ts`; the explanations are written from memory of the games and are worth a read before release.
 - **Home**: four practice cards from the Opera Game and the Immortal Game. They aren't saved or scheduled.
 
 PGN text is read by `src/domain/pgn.ts`, which only handles the shape of PGN (move numbers, variations, comments). Every move goes through chess.js, which decides whether it is legal.

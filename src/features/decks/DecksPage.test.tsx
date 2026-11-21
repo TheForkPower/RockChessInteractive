@@ -7,6 +7,7 @@ import { addCards, createDeck, listCards, listDecks } from "../../data/repo";
 import { buildDeckCards } from "../../domain/cards";
 import { START_FEN } from "../../domain/fen";
 import { parseMovetext } from "../../domain/pgn";
+import { installTutorialDeckOnce } from "../../data/seed";
 
 vi.mock("../../board/Board", async () => await import("../../test/boardMock"));
 
@@ -177,5 +178,44 @@ describe("Decks page", () => {
     await userEvent.click(within(screen.getByRole("status")).getByRole("button", { name: "Delete deck" }));
     expect(await screen.findByText(/You have no decks yet/)).toBeInTheDocument();
     expect(await db.cards.count()).toBe(0);
+  });
+});
+
+describe("Decks page: the starter deck", () => {
+  it("shows the Famous moves deck with its banner and cards", async () => {
+    await installTutorialDeckOnce();
+    renderPage();
+    const heading = await screen.findByRole("heading", { name: "Famous moves" });
+    expect(heading.parentElement).toHaveTextContent("Starter deck");
+    expect(heading.parentElement).toHaveTextContent("10 cards");
+    expect(await screen.findAllByRole("button", { name: "Open" })).toHaveLength(10);
+    expect(screen.getByText("White to move. Play a good first move.")).toBeInTheDocument();
+  });
+
+  it("opens a starter card like any other", async () => {
+    await installTutorialDeckOnce();
+    renderPage();
+    await ready("Famous moves");
+    await userEvent.click(screen.getAllByRole("button", { name: "Open" })[1]);
+    expect(screen.getAllByText(/Nxe5/).length).toBeGreaterThan(0);
+  });
+
+  it("offers to add the starter deck back after it is deleted, and does", async () => {
+    await installTutorialDeckOnce();
+    renderPage();
+    await ready("Famous moves");
+    await click("Delete deck");
+    await userEvent.click(screen.getAllByRole("button", { name: "Delete deck" })[1]); // confirm
+    await screen.findByText(/You have no decks yet/);
+    await click("Add the Famous moves deck");
+    await ready("Famous moves");
+    expect((await listDecks())[0].theme).toBe("tutorial");
+  });
+
+  it("hides the add button while the deck is there", async () => {
+    await installTutorialDeckOnce();
+    renderPage();
+    await ready("Famous moves");
+    expect(screen.queryByRole("button", { name: "Add the Famous moves deck" })).not.toBeInTheDocument();
   });
 });

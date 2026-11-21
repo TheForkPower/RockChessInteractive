@@ -20,6 +20,7 @@ import {
   type LineTree,
   type PgnGame,
 } from "../../domain/pgn";
+import { BoardEditor } from "../editor/BoardEditor";
 import { MoveTree } from "../../moves/MoveTree";
 import { StepButtons } from "../../moves/StepButtons";
 import { Button } from "../../ui/Button";
@@ -49,6 +50,7 @@ export function CreatePage() {
   const [cardDraft, setCardDraft] = useState<CardDraft | null>(null);
   const [cardError, setCardError] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
+  const [editingBoard, setEditingBoard] = useState(false);
   const decks = useDecks();
 
   const current = getNode(tree, currentId);
@@ -252,6 +254,27 @@ export function CreatePage() {
           : "the position you set up"
         : `the position after ${moveLabel(tree, anchor.id)}`;
 
+  if (editingBoard) {
+    return (
+      <div>
+        <PageHeader title="Board editor">
+          Set up any position by hand. When it looks right, use it as the starting point for your cards.
+        </PageHeader>
+        <div className="mt-10">
+          <BoardEditor
+            initialFen={current.fen}
+            onCancel={() => setEditingBoard(false)}
+            onUse={(fen) => {
+              setFen(fen);
+              setTab("position");
+              setEditingBoard(false);
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <PageHeader title="Create cards">
@@ -290,7 +313,13 @@ export function CreatePage() {
             />
             <div className="mt-6">
               {tab === "position" ? (
-                <PositionPanel fen={current.fen} onSetFen={setFen} onStart={startAgain} onAddMoves={addTypedMoves} />
+                <PositionPanel
+                  fen={current.fen}
+                  onSetFen={setFen}
+                  onStart={startAgain}
+                  onOpenEditor={() => setEditingBoard(true)}
+                  onAddMoves={addTypedMoves}
+                />
               ) : (
                 <PgnPanel parse={parseForPanel} onLoad={loadGame} />
               )}

@@ -4,9 +4,16 @@ import type { Card } from "../domain/cards";
 export type Deck = {
   id: string;
   name: string;
+  /** A line or two about the deck, shown on its banner. */
+  description?: string;
+  /** "tutorial" marks the starter deck that comes with the app. */
+  theme?: "tutorial";
   createdAt: number;
   updatedAt: number;
 };
+
+/** Small flags the app keeps about itself, such as "the starter deck has been added". */
+export type MetaEntry = { key: string; value: unknown };
 
 /** A PGN a card was made from, kept so the original text isn't lost. */
 export type Source = {
@@ -25,6 +32,7 @@ export class RockChessDb extends Dexie {
   decks!: EntityTable<Deck, "id">;
   cards!: EntityTable<Card, "id">;
   sources!: EntityTable<Source, "id">;
+  meta!: EntityTable<MetaEntry, "key">;
 
   constructor(name = "rockchess") {
     super(name);
@@ -32,6 +40,9 @@ export class RockChessDb extends Dexie {
       decks: "id, name, updatedAt",
       cards: "id, deckId, updatedAt, *tags",
       sources: "id",
+    });
+    this.version(2).stores({
+      meta: "key",
     });
   }
 }

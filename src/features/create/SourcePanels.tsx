@@ -10,12 +10,14 @@ type PositionPanelProps = {
   /** The line is built from the position on the board, so typed moves go on from here. */
   onSetFen: (fen: string) => void;
   onStart: () => void;
+  /** Opens the board editor. */
+  onOpenEditor: () => void;
   /** Plays typed moves from the board position. Returns an error message, or null when they were added. */
   onAddMoves: (text: string) => string | null;
 };
 
 /** A FEN box and a moves box: set up any position, then type or paste the moves that follow. */
-export function PositionPanel({ fen, onSetFen, onStart, onAddMoves }: PositionPanelProps) {
+export function PositionPanel({ fen, onSetFen, onStart, onOpenEditor, onAddMoves }: PositionPanelProps) {
   const [fenDraft, setFenDraft] = useState(fen);
   const [shownFen, setShownFen] = useState(fen);
   const [fenError, setFenError] = useState<string | null>(null);
@@ -75,6 +77,9 @@ export function PositionPanel({ fen, onSetFen, onStart, onAddMoves }: PositionPa
             }}
           >
             Start position
+          </Button>
+          <Button variant="secondary" onClick={onOpenEditor}>
+            Set up the board by hand
           </Button>
         </div>
       </form>

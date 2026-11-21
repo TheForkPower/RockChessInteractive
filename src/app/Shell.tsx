@@ -1,5 +1,6 @@
-import type { ComponentType, SVGProps } from "react";
+import { useEffect, type ComponentType, type SVGProps } from "react";
 import { Link, NavLink, Outlet } from "react-router";
+import { installTutorialDeckOnce } from "../data/seed";
 import { CreateIcon, DecksIcon, HomeIcon, SettingsIcon } from "../ui/Icons";
 import { Wordmark } from "../ui/Logo";
 
@@ -22,6 +23,12 @@ const items: NavItem[] = [
  * screens, and as a fixed tab bar along the bottom on phones.
  */
 export function Shell() {
+  // First visit: put the starter deck in place. If storage is blocked there is
+  // nothing to add it to, and the pages already explain that.
+  useEffect(() => {
+    installTutorialDeckOnce().catch(() => {});
+  }, []);
+
   return (
     <div className="flex min-h-dvh flex-col">
       <a

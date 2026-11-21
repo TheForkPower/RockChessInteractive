@@ -34,6 +34,12 @@
   --color-caution-edge: #c58a14;
   --color-caution-wash: #fcf0d6;
 
+  /* The starter deck: orange running into red. White text on either end clears 5:1. */
+  --color-ember: #c2480b;
+  --color-ember-deep: #a3241a;
+  --color-ember-wash: #fdf0e6;
+  --color-ember-line: #f0c9ac;
+
   --radius-button: 1rem;
   --radius-panel: 1.25rem;
 }
