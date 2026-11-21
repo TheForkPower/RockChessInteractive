@@ -91,17 +91,20 @@ function PracticeCardView({ card, position, total, onNext, onRestart }: CardView
   const canAct = !done && !waiting;
 
   return (
-    <section className="panel p-4 sm:p-6" aria-labelledby="practice-title">
-      <p className="text-sm text-ink-soft">
-        Practice card {position} of {total}
-      </p>
-      <h2 id="practice-title" className="mt-1 text-2xl font-bold">
-        {card.title}
-      </h2>
-      <p className="mt-1 text-sm text-ink-soft">{card.source}</p>
-      <p className="mt-4 text-lg font-semibold">{card.instruction}</p>
+    <section className="panel p-5" aria-labelledby="practice-title">
+      <div className="flex items-baseline justify-between gap-3">
+        <h2 id="practice-title" className="text-xl font-bold">
+          {card.title}
+        </h2>
+        <p className="shrink-0 text-sm text-ink-soft">
+          Practice card {position} of {total}
+        </p>
+      </div>
+      <p className="text-sm text-ink-soft">{card.source}</p>
+      <p className="mt-2 font-semibold">{card.instruction}</p>
 
-      <div className="mx-auto mt-4 max-w-[30rem]">
+      {/* The board shrinks on short windows so the whole card stays on one screen. */}
+      <div className="mx-auto mt-3 w-[clamp(16rem,calc(100svh_-_29rem),27.5rem)] max-w-full">
         <Board
           fen={fen}
           orientation="w"
@@ -112,18 +115,18 @@ function PracticeCardView({ card, position, total, onNext, onRestart }: CardView
         />
       </div>
 
-      <div className="mt-5 min-h-[5.5rem]" aria-live="polite">
+      <div className="mt-3 h-28 overflow-y-auto" aria-live="polite">
         {message ? (
-          <Feedback tone={message.tone} title={message.title}>
+          <Feedback compact tone={message.tone} title={message.title}>
             {message.body}
           </Feedback>
         ) : (
-          <p className="text-ink-soft">Move a piece on the board to answer.</p>
+          <p className="text-sm text-ink-soft">Move a piece on the board to answer.</p>
         )}
-        {showHint && canAct ? <p className="mt-3 text-ink-soft">Hint: {card.hint}</p> : null}
+        {showHint && canAct ? <p className="mt-2 text-sm text-ink-soft">Hint: {card.hint}</p> : null}
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-3">
+      <div className="mt-3 flex flex-wrap gap-3">
         {done ? (
           <>
             <Button onClick={onNext}>Next card</Button>
@@ -143,7 +146,7 @@ function PracticeCardView({ card, position, total, onNext, onRestart }: CardView
         )}
       </div>
 
-      <p className="mt-5 text-sm text-ink-soft">
+      <p className="mt-3 text-xs text-ink-soft">
         Practice cards aren't saved or scheduled. They check your move against the one played in the game, not an
         engine.
       </p>

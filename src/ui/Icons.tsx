@@ -63,3 +63,27 @@ export const InfoIcon = (p: SVGProps<SVGSVGElement>) => (
     <path d="M12 11v5M12 8h.01" />
   </Icon>
 );
+
+export const ChevronLeftIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="m14 6-6 6 6 6" />
+  </Icon>
+);
+
+export const ChevronRightIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="m10 6 6 6-6 6" />
+  </Icon>
+);
+
+export const SkipStartIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M6 6v12M18 6l-8 6 8 6z" />
+  </Icon>
+);
+
+export const SkipEndIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M18 6v12M6 6l8 6-8 6z" />
+  </Icon>
+);

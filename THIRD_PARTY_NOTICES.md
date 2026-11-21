@@ -18,6 +18,8 @@ Options before launch: keep these pieces and comply with CC BY-SA, replace them 
 | chess.js | BSD-2-Clause |
 | React, React Router | MIT |
 | Tailwind CSS | MIT |
+| Dexie, dexie-react-hooks | Apache-2.0 |
+| fake-indexeddb (tests only) | Apache-2.0 |
 | Figtree (via Fontsource) | SIL Open Font Licence 1.1 |
 | Bricolage Grotesque (via Fontsource) | SIL Open Font Licence 1.1 |
 
