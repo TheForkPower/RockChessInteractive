@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link, Navigate, useSearchParams } from "react-router";
 import { markDifficult, recordStruggle } from "../../data/difficult";
 import { getDeck, listCards, STORAGE_ERROR } from "../../data/repo";
@@ -24,9 +24,11 @@ type SessionProps = {
   cards: Card[];
   mode: "review" | "learn";
   replyDelay: number;
+  /** The back link and title, shown on the first line. */
+  heading: ReactNode;
 };
 
-function Session({ deck, cards, mode, replyDelay }: SessionProps) {
+function Session({ deck, cards, mode, replyDelay, heading }: SessionProps) {
   const [index, setIndex] = useState(0);
   const [run, setRun] = useState(0);
   const [round, setRound] = useState(0);
@@ -69,6 +71,7 @@ function Session({ deck, cards, mode, replyDelay }: SessionProps) {
     const skipped = cards.length - done;
     return (
       <div className="max-w-2xl">
+        <div className="mb-8">{heading}</div>
         <h2 className="text-3xl font-bold">{done === 0 ? "Session ended" : `You went through ${done === 1 ? "1 card" : `${done} cards`}`}</h2>
         {done > 0 ? (
           <ul className="mt-5 space-y-2">
@@ -108,29 +111,28 @@ function Session({ deck, cards, mode, replyDelay }: SessionProps) {
             Back to decks
           </ButtonLink>
         </div>
-        <p className="mt-6 text-sm text-ink-soft">
-          Results aren't scheduled yet. That arrives with spaced repetition in milestone 4. Cards you struggled with are copied
-          to Difficult moves.
-        </p>
       </div>
     );
   }
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="font-semibold text-ink-soft" aria-live="polite">
-          Card {index + 1} of {cards.length}
-        </p>
-        <Button variant="secondary" onClick={() => setEnded(true)}>
-          End session
-        </Button>
+      <div className="flex items-center justify-between gap-3">
+        {heading}
+        <div className="flex shrink-0 items-center gap-3">
+          <p className="font-semibold text-ink-soft" aria-live="polite">
+            Card {index + 1} of {cards.length}
+          </p>
+          <Button variant="secondary" className="!px-4 !py-2" onClick={() => setEnded(true)}>
+            End session
+          </Button>
+        </div>
       </div>
-      <div className="mt-2 h-2 rounded-full bg-line" aria-hidden="true">
-        <div className="h-2 rounded-full transition-[width]" style={{ width: `${(done / cards.length) * 100}%`, background: color.from }} />
+      <div className="mt-3 h-1.5 rounded-full bg-line" aria-hidden="true">
+        <div className="h-1.5 rounded-full transition-[width]" style={{ width: `${(done / cards.length) * 100}%`, background: color.from }} />
       </div>
 
-      <div className="mt-8">
+      <div className="mt-4">
         <ReviewCard
           key={`${round}-${card.id}-${run}`}
           card={card}
@@ -143,11 +145,6 @@ function Session({ deck, cards, mode, replyDelay }: SessionProps) {
           onAgain={() => setRun((value) => value + 1)}
         />
       </div>
-
-      <p className="mt-10 max-w-2xl text-sm text-ink-soft">
-        Cards check your move against the answer saved on the card, not an engine, so another good move can still be
-        marked wrong. Results aren't scheduled yet.
-      </p>
     </div>
   );
 }
@@ -185,15 +182,24 @@ export function ReviewPage({ replyDelay = REPLY_DELAY_MS }: Props) {
   const verb = mode === "learn" ? "Learn" : "Review";
   const title = loaded.status === "ready" ? `${verb}: ${loaded.deck.name}` : verb;
 
+  const heading = (
+    <div className="flex min-w-0 items-center gap-2">
+      <Link
+        to="/decks"
+        aria-label="All decks"
+        className="grid size-9 shrink-0 place-items-center rounded-full text-ink-soft hover:bg-line/60 hover:text-ink"
+      >
+        <ChevronLeftIcon width={22} height={22} />
+      </Link>
+      <h1 className="truncate text-2xl font-bold">{title}</h1>
+    </div>
+  );
+
   return (
     <div>
-      <Link to="/decks" className="inline-flex items-center gap-1 rounded-lg font-semibold text-ink-soft hover:text-ink">
-        <ChevronLeftIcon width={20} height={20} />
-        All decks
-      </Link>
-      <h1 className="mt-3 text-4xl font-bold sm:text-5xl">{title}</h1>
+      {loaded.status === "ready" && loaded.cards.length > 0 ? null : heading}
 
-      <div className="mt-8">
+      <div className={loaded.status === "ready" && loaded.cards.length > 0 ? "" : "mt-8"}>
         {loaded.status === "loading" ? <p className="text-ink-soft">Loading the cards…</p> : null}
         {loaded.status === "error" ? (
           <div className="max-w-xl">
@@ -214,7 +220,7 @@ export function ReviewPage({ replyDelay = REPLY_DELAY_MS }: Props) {
           </p>
         ) : null}
         {loaded.status === "ready" && loaded.cards.length > 0 ? (
-          <Session key={`${loaded.deck.id}-${mode}`} deck={loaded.deck} cards={loaded.cards} mode={mode} replyDelay={replyDelay} />
+          <Session key={`${loaded.deck.id}-${mode}`} deck={loaded.deck} cards={loaded.cards} mode={mode} replyDelay={replyDelay} heading={heading} />
         ) : null}
       </div>
     </div>

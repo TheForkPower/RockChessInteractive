@@ -213,7 +213,6 @@ describe("Review: a session of several cards", () => {
     const another = within(screen.getByRole("region", { name: "Worth another look" }));
     expect(another.getByText("White to move.")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Back to decks" })).toHaveAttribute("href", "/decks");
-    expect(screen.getByText(/aren't scheduled yet/)).toBeInTheDocument();
   });
 
   it("starts over with Review again", async () => {
@@ -360,17 +359,33 @@ describe("The card's layout", () => {
     expect(screen.queryByText(/\$1/)).not.toBeInTheDocument();
   });
 
-  it("lists every move beside the card instead of under the board", async () => {
+  it("has no separate list of all the moves, and keeps the arrows under the board", async () => {
     const id = await makeDeck("Side", drafts("1. e4 e5 2. Nf3 Nc6", "moves"));
     renderReview(`?deck=${id}`);
     await screen.findByRole("heading", { level: 2, name: "White to move" });
     await play({ from: "e2", to: "e4" });
-    const moves = within(await screen.findByRole("region", { name: "All the moves" }, { timeout: 4000 }));
-    await userEvent.click(moves.getByRole("button", { name: "2... Nc6" }));
-    expect(board()).toHaveAttribute("data-fen", expect.stringContaining("r1bqkbnr/pppp1ppp/2n5"));
-    // The board column has the arrows but no list of moves of its own.
-    expect(screen.queryByRole("group", { name: "Continuation" })).not.toBeInTheDocument();
+    await screen.findByRole("region", { name: "Answer" }, { timeout: 4000 });
+    expect(screen.queryByRole("region", { name: "All the moves" })).not.toBeInTheDocument();
     expect(screen.getByRole("group", { name: "Step through the moves" })).toBeInTheDocument();
+  });
+
+  it("keeps the title, count and progress on one short line above the card", async () => {
+    const id = await makeDeck("Two", [...drafts("1. e4 e5", "moves"), ...drafts("1. d4 d5", "moves")]);
+    renderReview(`?deck=${id}`);
+    const title = await screen.findByRole("heading", { level: 1, name: "Review: Two" });
+    const row = title.closest("div")!.parentElement!;
+    expect(within(row).getByText("Card 1 of 2")).toBeInTheDocument();
+    expect(within(row).getByRole("button", { name: "End session" })).toBeInTheDocument();
+    expect(within(row).getByRole("link", { name: "All decks" })).toHaveAttribute("href", "/decks");
+    expect(title).toHaveClass("text-2xl");
+  });
+
+  it("has no footnotes explaining how cards are checked", async () => {
+    const id = await makeDeck("Notes", drafts("1. e4 e5", "moves"));
+    renderReview(`?deck=${id}`);
+    await screen.findByRole("heading", { level: 2, name: "White to move" });
+    expect(screen.queryByText(/not an engine/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/scheduled/)).not.toBeInTheDocument();
   });
 
   it("puts the next-card button above the explanation", async () => {

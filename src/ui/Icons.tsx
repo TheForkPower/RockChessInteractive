@@ -23,11 +23,10 @@ export const HomeIcon = (p: SVGProps<SVGSVGElement>) => (
   </Icon>
 );
 
-export const RecallIcon = (p: SVGProps<SVGSVGElement>) => (
+export const ToolsIcon = (p: SVGProps<SVGSVGElement>) => (
   <Icon {...p}>
-    <path d="M4 12a8 8 0 1 0 2.6-5.9" />
-    <path d="M4 4v4h4" />
-    <path d="M12 8v4l2.5 2" />
+    <path d="M14.5 6.5a4 4 0 0 0 4.9 4.9L20 12l-8 8a2.1 2.1 0 0 1-3-3l8-8z" />
+    <path d="M14.5 6.5 17 4l3 3-2.5 2.5" />
   </Icon>
 );
 

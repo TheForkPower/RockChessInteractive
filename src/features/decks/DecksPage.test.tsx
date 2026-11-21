@@ -48,6 +48,15 @@ const tile = (name: string) => {
   return within(item);
 };
 
+const cardRows = () => screen.getAllByRole("listitem").filter((item) => within(item).queryByRole("button", { name: /^(Open|Close)$/ }));
+
+/** Opens the "more options" menu on a card (the first one, unless a row is given) and picks an item from it. */
+async function fromCardMenu(item: string, row?: HTMLElement) {
+  const scope = row ? within(row) : screen;
+  await userEvent.click(scope.getAllByRole("button", { name: /^More options for (Answer|Line):/ })[0]);
+  await userEvent.click(scope.getByRole("menuitem", { name: item }));
+}
+
 beforeEach(async () => {
   await db.delete();
   await db.open();
@@ -224,7 +233,7 @@ describe("Decks page: one deck", () => {
   it("edits a card and keeps the change", async () => {
     const id = await seed("Open", "1. e4 e5");
     await openDeck(id, "Open");
-    await click("Edit");
+    await fromCardMenu("Edit");
     expect(screen.getByRole("heading", { level: 1, name: "Edit card" })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Question"), { target: { value: "Open the game." } });
     fireEvent.change(screen.getByLabelText("Other accepted moves (optional)"), { target: { value: "d4, c4" } });
@@ -241,7 +250,7 @@ describe("Decks page: one deck", () => {
   it("won't save an edit with an answer that isn't legal", async () => {
     const id = await seed("Open", "1. e4 e5");
     await openDeck(id, "Open");
-    await click("Edit");
+    await fromCardMenu("Edit");
     fireEvent.change(screen.getByLabelText("Answer"), { target: { value: "e5" } });
     expect(screen.getByRole("alert")).toHaveTextContent(/isn't a legal move/);
     await click("Save changes");
@@ -251,7 +260,7 @@ describe("Decks page: one deck", () => {
   it("cancels an edit", async () => {
     const id = await seed("Open", "1. e4 e5");
     await openDeck(id, "Open");
-    await click("Edit");
+    await fromCardMenu("Edit");
     await click("Cancel");
     expect(screen.getByRole("heading", { level: 1, name: "Open" })).toBeInTheDocument();
   });
@@ -261,11 +270,11 @@ describe("Decks page: one deck", () => {
     await openDeck(id, "Open");
     const row = screen.getAllByRole("listitem").find((item) => within(item).queryByText("Answer: 1. e4"));
     if (!row) throw new Error("card not found");
-    await userEvent.click(within(row).getByRole("button", { name: "Delete" }));
+    await fromCardMenu("Delete", row);
     await userEvent.click(within(row).getByRole("button", { name: "Keep it" }));
     expect(await listCards(id)).toHaveLength(2);
 
-    await userEvent.click(within(row).getByRole("button", { name: "Delete" }));
+    await fromCardMenu("Delete", row);
     await userEvent.click(within(row).getByRole("button", { name: "Delete card" }));
     await waitFor(async () => expect(await listCards(id)).toHaveLength(1));
     await waitFor(() => expect(screen.queryByText("Answer: 1. e4")).not.toBeInTheDocument());
@@ -308,6 +317,34 @@ describe("Decks page: one deck", () => {
     await userEvent.click(within(screen.getByRole("status")).getByRole("button", { name: "Delete deck" }));
     expect(await screen.findByText(/You have no decks yet/)).toBeInTheDocument();
     expect(await db.cards.count()).toBe(0);
+  });
+});
+
+describe("Decks page: a deck's card rows", () => {
+  it("shows only Open on each card, with Edit and Delete in a menu", async () => {
+    const id = await seed("Open", "1. e4 e5 2. Nf3");
+    await openDeck(id, "Open");
+    for (const row of cardRows()) {
+      const buttons = within(row).getAllByRole("button").map((button) => button.getAttribute("aria-label") ?? button.textContent);
+      expect(buttons).toEqual(["Open", expect.stringMatching(/^More options for/)]);
+    }
+    expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getAllByRole("button", { name: /^More options for/ })[0]);
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Edit", "Mark as difficult", "Delete"]);
+  });
+
+  it("lays every row out the same way, whatever the question's length", async () => {
+    const id = await seed("Open", "1. e4 e5 2. Nf3");
+    await openDeck(id, "Open");
+    const shapes = cardRows().map((row) => {
+      const layout = row.firstElementChild as HTMLElement;
+      const open = within(row).getByRole("button", { name: "Open" });
+      return `${layout.className}|${open.className}`;
+    });
+    expect(new Set(shapes).size).toBe(1);
+    expect(shapes[0]).toContain("min-h-");
+    expect(shapes[0]).toContain("min-w-");
   });
 });
 
@@ -361,13 +398,38 @@ describe("Decks page: the starter deck", () => {
 describe("Decks page: Difficult moves", () => {
   const difficult = async () => (await listDecks()).find((deck) => deck.theme === "difficult")!;
 
-  it("shows as an orange tile that says it fills itself, even when empty", async () => {
+  it("sits apart from the other decks as a small strip, with the message while it is empty", async () => {
+    await seed("Ruy Lopez", "1. e4 e5");
     await installDifficultDeckOnce();
     renderPage();
-    await screen.findByRole("heading", { name: "Difficult moves" });
-    expect(tile("Difficult moves").getByText("Fills itself, 0 cards")).toBeInTheDocument();
-    const item = screen.getAllByRole("listitem").find((li) => li.querySelector("h2")?.textContent === "Difficult moves")!;
-    expect(item.getAttribute("style")).toContain("rgb(194, 84, 0)");
+    await screen.findByRole("heading", { name: "Ruy Lopez" });
+    // Not one of the packs.
+    expect(screen.getAllByRole("listitem").some((li) => li.querySelector("h2")?.textContent === "Difficult moves")).toBe(false);
+    const strip = within(screen.getByRole("region", { name: "Difficult moves" }));
+    expect(strip.getByText("This deck has no cards yet. Make some bad moves and it will be filled! :)")).toBeInTheDocument();
+    expect(strip.getByRole("link", { name: "Difficult moves" })).toHaveAttribute("href", expect.stringContaining("/decks?deck="));
+    expect(strip.queryByRole("link", { name: /^Review/ })).not.toBeInTheDocument();
+    // It comes after the packs on the page.
+    const pack = screen.getByRole("heading", { name: "Ruy Lopez" });
+    expect(pack.compareDocumentPosition(screen.getByRole("region", { name: "Difficult moves" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Difficult moves" }).getAttribute("style")).toContain("rgb(194, 84, 0)");
+  });
+
+  it("offers Review and Learn on the strip once it has cards", async () => {
+    const id = await seed("Ruy Lopez", "1. e4 e5");
+    await markDifficult((await listCards(id))[0]);
+    renderPage();
+    const strip = within(await screen.findByRole("region", { name: "Difficult moves" }));
+    expect(await strip.findByText(/Fills itself as you practise. 1 card./)).toBeInTheDocument();
+    expect(strip.getByRole("link", { name: "Review Difficult moves" })).toBeInTheDocument();
+    expect(strip.getByRole("link", { name: "Learn Difficult moves" })).toBeInTheDocument();
+  });
+
+  it("shows nothing for it when the deck has been deleted", async () => {
+    await seed("Ruy Lopez", "1. e4 e5");
+    renderPage();
+    await screen.findByRole("heading", { name: "Ruy Lopez" });
+    expect(screen.queryByRole("region", { name: "Difficult moves" })).not.toBeInTheDocument();
   });
 
   it("explains how it fills when it is empty", async () => {
@@ -382,10 +444,10 @@ describe("Decks page: Difficult moves", () => {
   it("lets you add a card from another deck, and says so", async () => {
     const id = await seed("Ruy Lopez", "1. e4 e5 2. Nf3 Nc6");
     await openDeck(id, "Ruy Lopez");
-    const [first] = screen.getAllByRole("button", { name: "Mark as difficult" });
-    await userEvent.click(first);
+    const [first] = cardRows();
+    await fromCardMenu("Mark as difficult", first);
     expect(await screen.findByText("Added to Difficult moves.")).toBeInTheDocument();
-    await userEvent.click(first);
+    await fromCardMenu("Mark as difficult", first);
     expect(await screen.findByText("Already in Difficult moves.")).toBeInTheDocument();
     expect(await listCards((await difficult()).id)).toHaveLength(1);
   });
@@ -399,11 +461,13 @@ describe("Decks page: Difficult moves", () => {
     const deck = await difficult();
     renderPage(`/decks?deck=${deck.id}`);
     await screen.findByRole("heading", { level: 1, name: "Difficult moves" });
-    const rows = await screen.findAllByRole("listitem");
-    const cardRows = rows.filter((row) => within(row).queryByRole("button", { name: "Edit" }));
-    expect(within(cardRows[0]).getByText("Gave trouble 2 times")).toBeInTheDocument();
-    expect(within(cardRows[1]).getByText("Gave trouble once")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Mark as difficult" })).not.toBeInTheDocument();
+    await screen.findAllByRole("button", { name: "Open" });
+    const rows = cardRows();
+    expect(within(rows[0]).getByText("Gave trouble 2 times")).toBeInTheDocument();
+    expect(within(rows[1]).getByText("Gave trouble once")).toBeInTheDocument();
+    await userEvent.click(screen.getAllByRole("button", { name: /^More options for/ })[0]);
+    expect(screen.queryByRole("menuitem", { name: "Mark as difficult" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Edit", "Delete"]);
   });
 
   it("deletes a card from it with the usual question, leaving the original", async () => {
@@ -413,8 +477,8 @@ describe("Decks page: Difficult moves", () => {
     const deck = await difficult();
     renderPage(`/decks?deck=${deck.id}`);
     await screen.findByRole("heading", { level: 1, name: "Difficult moves" });
-    await screen.findByRole("button", { name: "Edit" });
-    await click("Delete");
+    await screen.findAllByRole("button", { name: "Open" });
+    await fromCardMenu("Delete");
     await click("Delete card");
     await waitFor(async () => expect(await listCards(deck.id)).toHaveLength(0));
     expect(await listCards(id)).toHaveLength(1);

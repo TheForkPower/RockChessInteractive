@@ -102,3 +102,39 @@ export function DeckTile({ deck }: { deck: DeckSummary }) {
     </li>
   );
 }
+
+/** The Difficult moves deck: a smaller strip below the other decks, not a pack among them. */
+export function DifficultStrip({ deck }: { deck: DeckSummary }) {
+  const color = colorOf(deck);
+  const open = `/decks?deck=${deck.id}`;
+  const note = `difficult-note-${deck.id}`;
+  const cards = deck.cardCount === 1 ? "1 card" : `${deck.cardCount} cards`;
+  return (
+    <section
+      aria-labelledby={`difficult-${deck.id}`}
+      className="relative isolate mt-12 max-w-2xl rounded-2xl px-5 py-4 text-white shadow-[0_3px_0_rgba(0,0,0,0.22)]"
+      style={{ background: gradientOf(color) }}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+        <div className="min-w-0">
+          <h2 id={`difficult-${deck.id}`} className="text-lg font-bold leading-tight">
+            <Link
+              to={open}
+              className="rounded-lg after:absolute after:inset-0 after:rounded-2xl focus-visible:outline-none focus-visible:after:outline focus-visible:after:outline-4 focus-visible:after:-outline-offset-4 focus-visible:after:outline-white"
+            >
+              {deck.name}
+            </Link>
+          </h2>
+          <p id={note} className="mt-0.5 text-sm text-white/90">
+            {deck.cardCount === 0 ? "This deck has no cards yet. Make some bad moves and it will be filled! :)" : `Fills itself as you practise. ${cards}.`}
+          </p>
+        </div>
+        {deck.cardCount > 0 ? (
+          <div className="relative z-20 flex gap-2">
+            <PlayLinks deckId={deck.id} name={deck.name} cardCount={deck.cardCount} describedBy={note} />
+          </div>
+        ) : null}
+      </div>
+    </section>
+  );
+}

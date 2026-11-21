@@ -9,6 +9,7 @@ import { Button } from "../../ui/Button";
 import { Feedback } from "../../ui/Feedback";
 import { fieldClass } from "../../ui/Field";
 import { ChevronLeftIcon } from "../../ui/Icons";
+import { Menu } from "../../ui/Menu";
 import { CardEditor, type DeckChoice } from "../cards/CardEditor";
 import { CardPreview } from "../cards/CardPreview";
 import { ColorPicker } from "./ColorPicker";
@@ -265,11 +266,11 @@ export function DeckDetail({ deck, action, onSettled, onGone }: Props) {
             const category = CATEGORIES.find((option) => option.value === card.category)?.label;
             return (
               <li key={card.id} className="panel p-5">
-                <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="grid min-h-[7.5rem] grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4">
                   <div className="min-w-0">
-                    <p className="font-display text-lg font-bold">{card.prompt}</p>
-                    <p className="mt-1 font-mono text-sm text-ink-soft">{cardSummary(card)}</p>
-                    <p className="mt-1 text-sm text-ink-soft">
+                    <p className="line-clamp-2 font-display text-lg font-bold">{card.prompt}</p>
+                    <p className="mt-1 truncate font-mono text-sm text-ink-soft">{cardSummary(card)}</p>
+                    <p className="mt-1 truncate text-sm text-ink-soft">
                       {category}
                       {card.tags.length > 0 ? `, ${card.tags.join(", ")}` : ""}
                     </p>
@@ -284,21 +285,20 @@ export function DeckDetail({ deck, action, onSettled, onGone }: Props) {
                       </p>
                     ) : null}
                   </div>
-                  <div className="flex flex-wrap gap-3">
-                    <Button variant="secondary" aria-expanded={open} onClick={() => setOpenId(open ? null : card.id)}>
+                  <div className="flex items-center gap-2">
+                    <Button variant="secondary" className="min-w-28" aria-expanded={open} onClick={() => setOpenId(open ? null : card.id)}>
                       {open ? "Close" : "Open"}
                     </Button>
-                    <Button variant="secondary" onClick={() => setEditing(card)}>
-                      Edit
-                    </Button>
-                    {deck.theme === "difficult" ? null : (
-                      <Button variant="secondary" onClick={() => addToDifficult(card)}>
-                        Mark as difficult
-                      </Button>
-                    )}
-                    <Button variant="secondary" onClick={() => setConfirmCard(card.id)}>
-                      Delete
-                    </Button>
+                    <Menu
+                      label={`More options for ${cardSummary(card)}`}
+                      items={[
+                        { label: "Edit", onSelect: () => setEditing(card) },
+                        ...(deck.theme === "difficult"
+                          ? []
+                          : [{ label: "Mark as difficult", onSelect: () => void addToDifficult(card) }]),
+                        { label: "Delete", danger: true, onSelect: () => setConfirmCard(card.id) },
+                      ]}
+                    />
                   </div>
                 </div>
 

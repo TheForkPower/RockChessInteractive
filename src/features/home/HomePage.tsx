@@ -17,13 +17,13 @@ export function HomePage() {
           <Checker />
           <h2 className="relative z-10 text-2xl font-bold leading-tight sm:text-3xl">
             <Link
-              to="/recall"
+              to="/decks"
               className="rounded-lg after:absolute after:inset-0 after:z-10 after:rounded-3xl focus-visible:outline-none focus-visible:after:outline focus-visible:after:outline-4 focus-visible:after:outline-offset-2 focus-visible:after:outline-ink"
             >
-              Recall
+              Decks
             </Link>
           </h2>
-          <p className="relative z-10 mt-2 max-w-[22ch] text-white/90">Learn the moves you want to remember, then review them.</p>
+          <p className="relative z-10 mt-2 max-w-[22ch] text-white/90">Your packs of cards. Learn them, then review them.</p>
         </li>
       </ul>
       <p className="mt-16 text-sm text-ink-soft">

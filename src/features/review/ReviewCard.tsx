@@ -3,12 +3,11 @@ import { Board } from "../../board/Board";
 import { answerText, CATEGORIES, sideName, type Card } from "../../domain/cards";
 import type { DifficultResult } from "../../data/difficult";
 import { Game, type MoveInput } from "../../domain/game";
-import { mainlineFrom, moveLabel, parseMovetext } from "../../domain/pgn";
+import { moveLabel, parseMovetext } from "../../domain/pgn";
 import { answerNodeIds, linkMoves } from "../../domain/richText";
 import { backText, judgeMove, outcomeOf, planCard, splitPrompt, type Outcome, type Tally } from "../../domain/review";
 import { ContinuationViewer } from "../../moves/ContinuationViewer";
 import { LinkedText, MoveButton } from "../../moves/LinkedText";
-import { MoveTree } from "../../moves/MoveTree";
 import { Button } from "../../ui/Button";
 import { Feedback } from "../../ui/Feedback";
 
@@ -188,7 +187,6 @@ export function ReviewCard({ card, mode, replyDelay, isLast, onFinished, onNext,
   const { heading, detail } = splitPrompt(card);
   const answerIds = answerNodeIds(tree, card.answer);
   const explanation = useMemo(() => linkMoves(card.explanation, tree), [card.explanation, tree]);
-  const hasMoves = Boolean(tree && mainlineFrom(tree, tree.rootId).length > 0);
 
   /** The moves of the answer, each one pressable. Falls back to plain text if the saved continuation doesn't start with them. */
   function answerMoves() {
@@ -213,8 +211,8 @@ export function ReviewCard({ card, mode, replyDelay, isLast, onFinished, onNext,
   }
 
   return (
-    <div className="grid gap-8 lg:grid-cols-[minmax(0,34rem)_minmax(0,1fr)] lg:items-start">
-      <div className="w-[clamp(18rem,calc(100svh_-_13rem),34rem)] max-w-full">
+    <div className="grid gap-6 lg:grid-cols-[auto_minmax(0,1fr)] lg:items-start lg:gap-8">
+      <div className="w-[clamp(18rem,calc(100svh_-_10.5rem),34rem)] max-w-full">
         {phase === "play" ? (
           <Board
             fen={fen}
@@ -236,14 +234,14 @@ export function ReviewCard({ card, mode, replyDelay, isLast, onFinished, onNext,
         )}
       </div>
 
-      <div className="min-w-0">
+      <div className="min-w-0 lg:max-h-[calc(100svh_-_10.5rem)] lg:overflow-y-auto lg:pr-2">
         <p className="text-sm font-semibold text-ink-soft">
           {category}. You play {sideName(card.side)}.
         </p>
-        <h2 className="mt-1 text-4xl font-bold sm:text-5xl">{heading}</h2>
+        <h2 className="mt-1 text-4xl font-bold">{heading}</h2>
         {detail ? <p className="mt-2 text-lg text-ink-soft">{detail}</p> : null}
 
-        <div className="mt-5 min-h-20" aria-live="polite">
+        <div className="mt-4 min-h-16" aria-live="polite">
           {message ? (
             <Feedback tone={message.tone} title={message.title}>
               {message.body}
@@ -280,19 +278,19 @@ export function ReviewCard({ card, mode, replyDelay, isLast, onFinished, onNext,
           <div className="mt-5 space-y-6">
             <div className="flex flex-wrap gap-3">
               {phase === "study" ? (
-                <Button size="lg" onClick={startPlaying}>
+                <Button onClick={startPlaying}>
                   Play it from memory
                 </Button>
               ) : (
                 <>
-                  <Button size="lg" onClick={onNext}>
+                  <Button onClick={onNext}>
                     {isLast ? "See results" : "Next card"}
                   </Button>
-                  <Button variant="secondary" size="lg" onClick={onAgain}>
+                  <Button variant="secondary" onClick={onAgain}>
                     Try this card again
                   </Button>
                   {onMarkDifficult ? (
-                    <Button variant="secondary" size="lg" disabled={marked === "added" || marked === "already"} onClick={markDifficult}>
+                    <Button variant="secondary" disabled={marked === "added" || marked === "already"} onClick={markDifficult}>
                       Mark as difficult
                     </Button>
                   ) : null}
@@ -336,22 +334,6 @@ export function ReviewCard({ card, mode, replyDelay, isLast, onFinished, onNext,
               <section>
                 <h3 className="text-sm font-semibold text-ink-soft">Notes</h3>
                 <p className="mt-1 whitespace-pre-wrap">{card.notes}</p>
-              </section>
-            ) : null}
-
-            {hasMoves && tree ? (
-              <section aria-labelledby="moves-heading">
-                <h3 id="moves-heading" className="text-sm font-semibold text-ink-soft">
-                  All the moves
-                </h3>
-                <div className="mt-2 max-h-64 overflow-y-auto rounded-2xl border-2 border-line bg-surface p-4">
-                  <MoveTree
-                    tree={tree}
-                    selectedId={shownId && shownId !== tree.rootId ? shownId : null}
-                    onSelect={setShownId}
-                    label="All the moves"
-                  />
-                </div>
               </section>
             ) : null}
           </div>

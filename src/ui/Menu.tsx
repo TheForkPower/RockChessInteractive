@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Link } from "react-router";
 import { DotsIcon } from "./Icons";
 
@@ -12,6 +12,12 @@ type Props = {
   items: MenuItem[];
   /** Colours for the button when it sits on a coloured background. */
   tone?: "light" | "dark";
+  /** Show this word on the button instead of the three dots. */
+  text?: ReactNode;
+  /** Classes for the button when it shows text. */
+  textClass?: string;
+  /** Where the list opens. "up-on-small" opens upwards on narrow screens, for a menu in a bar along the bottom. */
+  placement?: "below" | "up-on-small";
 };
 
 const itemClass =
@@ -21,7 +27,7 @@ const itemClass =
  * A button that opens a short list of actions. Arrow keys move through the
  * list, Escape or a click elsewhere closes it, and focus goes back to the button.
  */
-export function Menu({ label, items, tone = "light" }: Props) {
+export function Menu({ label, items, tone = "light", text, textClass = "", placement = "below" }: Props) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -75,23 +81,30 @@ export function Menu({ label, items, tone = "light" }: Props) {
       <button
         ref={trigger}
         type="button"
-        aria-label={label}
+        aria-label={text ? undefined : label}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
-        className={[
-          "grid size-10 place-items-center rounded-full transition-colors",
-          tone === "dark" ? "text-white hover:bg-white/20" : "text-ink hover:bg-line/60",
-          open ? (tone === "dark" ? "bg-white/25" : "bg-line/60") : "",
-        ].join(" ")}
+        className={
+          text
+            ? textClass
+            : [
+                "grid size-10 place-items-center rounded-full transition-colors",
+                tone === "dark" ? "text-white hover:bg-white/20" : "text-ink hover:bg-line/60",
+                open ? (tone === "dark" ? "bg-white/25" : "bg-line/60") : "",
+              ].join(" ")
+        }
       >
-        <DotsIcon />
+        {text ?? <DotsIcon />}
       </button>
       {open ? (
         <div
           role="menu"
           aria-label={label}
-          className="absolute right-0 top-full z-30 mt-1 w-52 rounded-2xl border-2 border-line bg-surface p-1.5 shadow-lg"
+          className={[
+            "absolute right-0 z-30 w-52 rounded-2xl border-2 border-line bg-surface p-1.5 shadow-lg",
+            placement === "up-on-small" ? "bottom-full mb-2 md:bottom-auto md:top-full md:mb-0 md:mt-1" : "top-full mt-1",
+          ].join(" ")}
         >
           {items.map((item) =>
             "to" in item ? (

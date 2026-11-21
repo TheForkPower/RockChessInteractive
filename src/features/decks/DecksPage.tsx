@@ -8,7 +8,7 @@ import { Button } from "../../ui/Button";
 import { Feedback } from "../../ui/Feedback";
 import { PageHeader } from "../../ui/PageHeader";
 import { DeckDetail, type DeckAction } from "./DeckDetail";
-import { DeckTile } from "./DeckTile";
+import { DeckTile, DifficultStrip } from "./DeckTile";
 
 const ACTIONS: DeckAction[] = ["rename", "colour", "delete"];
 
@@ -66,11 +66,13 @@ export function DecksPage() {
   }
 
   const hasStarter = decks.some((item) => item.theme === "tutorial");
+  const difficult = decks.find((item) => item.theme === "difficult");
+  const regular = decks.filter((item) => item.theme !== "difficult");
 
   return (
     <div>
       <PageHeader title="Decks">
-        {decks.length === 0
+        {regular.length === 0
           ? "You have no decks yet. A deck appears when you save your first card."
           : "Each deck is a pack of cards. Press Review or Learn to play one, or open it to see and edit its cards."}
       </PageHeader>
@@ -84,7 +86,7 @@ export function DecksPage() {
       ) : null}
 
       <ul className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-        {decks.map((item) => (
+        {regular.map((item) => (
           <DeckTile key={item.id} deck={item} />
         ))}
         <li className="flex">
@@ -105,6 +107,8 @@ export function DecksPage() {
           </Button>
         </div>
       )}
+
+      {difficult ? <DifficultStrip deck={difficult} /> : null}
     </div>
   );
 }

@@ -7,24 +7,28 @@ const steps = [
   "Review it when it is due, not before.",
 ];
 
+const points = [
+  "Make cards from positions in your PGNs",
+  "Play the answer on the board",
+  "Each card comes back when it's due",
+];
+
 /** The landing page for Recall, the learn-and-review part of the site. */
 export function RecallPage() {
   return (
     <div className="grid gap-x-14 gap-y-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,30rem)]">
       <div className="max-w-xl">
-        <h1 className="text-5xl/[1.05] font-bold sm:text-6xl/[1.05]">Anki for chess positions.</h1>
-        <p className="mt-6 text-lg text-ink-soft">
-          Make cards from positions in your PGNs, play the answer on the board, and each card comes back when it's
-          due.
-        </p>
+        <h1 className="text-5xl/[1.05] font-bold sm:text-6xl/[1.05]">Anki for chess positions</h1>
+        <ul className="mt-6 list-disc space-y-1.5 pl-6 text-lg text-ink-soft marker:text-brand">
+          {points.map((point) => (
+            <li key={point}>{point}</li>
+          ))}
+        </ul>
 
         <div className="mt-10">
           <ButtonLink to="/decks" size="lg">
             Start learning &amp; review
           </ButtonLink>
-          <p className="mt-4 text-sm text-ink-soft">
-            Pick a deck, then press Review or Learn. Cards aren't scheduled yet: that arrives in milestone 4.
-          </p>
         </div>
       </div>
 

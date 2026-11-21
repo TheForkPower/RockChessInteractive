@@ -145,11 +145,6 @@ function PracticeCardView({ card, position, total, onNext, onRestart }: CardView
           </>
         )}
       </div>
-
-      <p className="mt-3 text-xs text-ink-soft">
-        Practice cards aren't saved or scheduled. They check your move against the one played in the game, not an
-        engine.
-      </p>
     </section>
   );
 }

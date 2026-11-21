@@ -1,8 +1,9 @@
 import { useEffect, type ComponentType, type SVGProps } from "react";
-import { Link, NavLink, Outlet } from "react-router";
+import { Link, NavLink, Outlet, useLocation } from "react-router";
 import { installDifficultDeckOnce } from "../data/difficult";
 import { installTutorialDeckOnce } from "../data/seed";
-import { CreateIcon, DecksIcon, HomeIcon, RecallIcon, SettingsIcon } from "../ui/Icons";
+import { CreateIcon, DecksIcon, HomeIcon, SettingsIcon, ToolsIcon } from "../ui/Icons";
+import { Menu } from "../ui/Menu";
 import { Wordmark } from "../ui/Logo";
 
 type NavItem = {
@@ -14,7 +15,6 @@ type NavItem = {
 
 const items: NavItem[] = [
   { to: "/", label: "Home", Icon: HomeIcon, end: true },
-  { to: "/recall", label: "Recall", Icon: RecallIcon },
   { to: "/decks", label: "Decks", Icon: DecksIcon },
   { to: "/create", label: "Create", Icon: CreateIcon },
   { to: "/settings", label: "Settings", Icon: SettingsIcon },
@@ -25,6 +25,9 @@ const items: NavItem[] = [
  * screens, and as a fixed tab bar along the bottom on phones.
  */
 export function Shell() {
+  const { pathname } = useLocation();
+  const compact = pathname === "/review";
+  const inTools = pathname === "/recall" || pathname.startsWith("/recall/");
   // First visit: put the starter deck in place. If storage is blocked there is
   // nothing to add it to, and the pages already explain that.
   useEffect(() => {
@@ -71,12 +74,32 @@ export function Shell() {
                   </NavLink>
                 </li>
               ))}
+              <li className="flex-1 md:flex-none">
+                <Menu
+                  label="Tools"
+                  text={
+                    <>
+                      <ToolsIcon className="md:hidden" />
+                      Tools
+                    </>
+                  }
+                  placement="up-on-small"
+                  items={[{ label: "Recall", to: "/recall" }]}
+                  textClass={[
+                    "flex w-full flex-col items-center gap-0.5 rounded-xl px-3 py-2 text-xs font-semibold transition-colors md:w-auto md:flex-row md:px-4 md:text-base",
+                    inTools ? "bg-brand-wash text-brand" : "text-ink-soft hover:bg-line/60 hover:text-ink",
+                  ].join(" ")}
+                />
+              </li>
             </ul>
           </nav>
         </div>
       </header>
 
-      <main id="main" className="mx-auto w-full max-w-5xl flex-1 px-5 py-10 pb-28 sm:px-8 md:py-14 md:pb-16">
+      <main
+        id="main"
+        className={`mx-auto w-full max-w-5xl flex-1 px-5 pb-28 sm:px-8 ${compact ? "pt-4 md:pb-4" : "pt-10 md:pt-14 md:pb-16"}`}
+      >
         <Outlet />
       </main>
     </div>

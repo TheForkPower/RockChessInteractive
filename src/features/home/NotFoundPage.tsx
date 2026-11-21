@@ -1,12 +1,12 @@
 import { ButtonLink } from "../../ui/Button";
-import { PageHeader } from "../../ui/PageHeader";
 
 export function NotFoundPage() {
   return (
     <div>
-      <PageHeader title="That page doesn't exist">Check the address, or go back to the start page.</PageHeader>
+      <h1 className="text-5xl font-bold sm:text-6xl">Illegal move!</h1>
+      <p className="mt-4 text-lg text-ink-soft">There's no page at this address.</p>
       <div className="mt-8">
-        <ButtonLink to="/">Go home</ButtonLink>
+        <ButtonLink to="/">Back to the start</ButtonLink>
       </div>
     </div>
   );

@@ -15,44 +15,56 @@ function renderAt(path: string) {
 }
 
 describe("App shell", () => {
-  it("keeps the home page simple: a heading and one box that goes to Recall", () => {
+  it("keeps the home page simple: a heading and one box that goes to the decks", () => {
     renderAt("/");
     const main = within(screen.getByRole("main"));
     expect(main.getByRole("heading", { level: 1, name: "Home" })).toBeInTheDocument();
-    expect(main.getByRole("link", { name: "Recall" })).toHaveAttribute("href", "/recall");
+    expect(main.getByRole("link", { name: "Decks" })).toHaveAttribute("href", "/decks");
+    expect(main.queryByRole("link", { name: "Recall" })).not.toBeInTheDocument();
     expect(main.queryByText(/Anki for chess positions/)).not.toBeInTheDocument();
-    expect(main.queryByRole("link", { name: /start learning/i })).not.toBeInTheDocument();
-    // Only the one box, plus the quiet link to the design system.
     expect(main.getAllByRole("heading", { level: 2 })).toHaveLength(1);
   });
 
-  it("puts the old landing page at /recall, with its start button going to the decks", () => {
+  it("puts the landing page at /recall, with no full stop and the points as a list", () => {
     renderAt("/recall");
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Anki for chess positions.");
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(/^Anki for chess positions$/);
+    const points = within(screen.getAllByRole("list")[1]).getAllByRole("listitem").map((item) => item.textContent);
+    expect(points).toEqual([
+      "Make cards from positions in your PGNs",
+      "Play the answer on the board",
+      "Each card comes back when it's due",
+    ]);
     expect(screen.getByRole("link", { name: /start learning & review/i })).toHaveAttribute("href", "/decks");
   });
 
-  it("reaches Recall from the home box", async () => {
+  it("has a Tools menu in the header with Recall as its only option", async () => {
     renderAt("/");
-    await userEvent.click(within(screen.getByRole("main")).getByRole("link", { name: "Recall" }));
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Anki for chess positions.");
-    expect(screen.getByRole("navigation", { name: "Main" })).toContainElement(screen.getByRole("link", { name: "Recall" }));
+    const nav = within(screen.getByRole("navigation", { name: "Main" }));
+    expect(nav.queryByRole("link", { name: "Recall" })).not.toBeInTheDocument();
+    await userEvent.click(nav.getByRole("button", { name: "Tools" }));
+    const items = within(screen.getByRole("menu", { name: "Tools" })).getAllByRole("menuitem");
+    expect(items.map((item) => item.textContent)).toEqual(["Recall"]);
+    await userEvent.click(items[0]);
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Anki for chess positions");
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 
   it("offers every main destination in one navigation landmark", () => {
     renderAt("/");
     const nav = screen.getByRole("navigation", { name: "Main" });
-    for (const name of ["Home", "Recall", "Decks", "Create", "Settings"]) {
+    for (const name of ["Home", "Decks", "Create", "Settings"]) {
       expect(within(nav).getByRole("link", { name })).toBeInTheDocument();
     }
+    expect(within(nav).getByRole("button", { name: "Tools" })).toBeInTheDocument();
   });
 
   it("marks the current page and navigates between pages", async () => {
     renderAt("/");
-    expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "page");
-    await userEvent.click(screen.getByRole("link", { name: "Decks" }));
+    const nav = within(screen.getByRole("navigation", { name: "Main" }));
+    expect(nav.getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "page");
+    await userEvent.click(nav.getByRole("link", { name: "Decks" }));
     expect(screen.getByRole("heading", { level: 1, name: "Decks" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Decks" })).toHaveAttribute("aria-current", "page");
+    expect(nav.getByRole("link", { name: "Decks" })).toHaveAttribute("aria-current", "page");
   });
 
   it("renders the design system page and a not-found page", () => {
@@ -64,6 +76,7 @@ describe("App shell", () => {
     }
     unmount();
     renderAt("/nope");
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("That page doesn't exist");
+    expect(screen.getByRole("heading", { level: 1, name: "Illegal move!" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Back to the start" })).toHaveAttribute("href", "/");
   });
 });

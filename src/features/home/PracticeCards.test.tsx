@@ -39,11 +39,6 @@ describe("Practice cards", () => {
     expect(board()).toHaveAttribute("data-interactive", "turn");
   });
 
-  it("says plainly that the cards are not saved and not engine-checked", () => {
-    render(<PracticeCards />);
-    expect(screen.getByText(/aren't saved or scheduled/)).toHaveTextContent(/not an engine/);
-  });
-
   it("rejects a wrong move, shows feedback, and sends the piece back", () => {
     render(<PracticeCards />);
     const before = board().getAttribute("data-fen");
