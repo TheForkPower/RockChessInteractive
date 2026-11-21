@@ -14,6 +14,7 @@ import {
   GRADE_LABELS,
   GRADES,
   previewGrades,
+  smartGrade,
   suggestGrade,
   type Grade,
   type Schedule,
@@ -115,11 +116,15 @@ function Session({ items, scheduled, schedules, decks, settings, history, accent
 
   function record(entry: Item, outcome: Outcome, tally: Tally, timing: Timing) {
     const playerMoves = playerMoveCount(entry.card);
-    const suggestion = suggestGrade({ outcome, timing, playerMoves, history, useTime: settings.timeSignal });
+    const smart = settings.grading === "smart";
+    const input = { outcome, timing, playerMoves, history, useTime: settings.timeSignal };
+    const suggestion = smart ? smartGrade({ ...input, mistakes: tally.mistakes }) : suggestGrade(input);
     const preview = previewGrades(schedules[entry.card.id] ?? null, Date.now(), settings.desiredRetention);
     const intervals = Object.fromEntries(GRADES.map((grade) => [grade, formatInterval(preview[grade].days)])) as Record<Grade, string>;
     const took = timing.reliable ? ` Took ${formatDuration(timing.activeMs)}.` : "";
-    const summary = `Suggested: ${GRADE_LABELS[suggestion.grade]}. ${suggestion.reason}${took}`;
+    const summary = smart
+      ? `Graded ${GRADE_LABELS[suggestion.grade]}. It comes back in ${formatInterval(preview[suggestion.grade].days)}. ${suggestion.reason}${took}`
+      : `Suggested: ${GRADE_LABELS[suggestion.grade]}. ${suggestion.reason}${took}`;
 
     // A new card is graded for you: Good if you had it first time, Hard after one miss, Again after more.
     const missed = failures[entry.card.id] ?? 0;
@@ -156,6 +161,7 @@ function Session({ items, scheduled, schedules, decks, settings, history, accent
         grade: input.grade,
         suggested: input.suggested,
         nudged: input.nudged,
+        grading: input.phase === "review" ? settings.grading : "manual",
         phase: input.phase,
         outcome: input.go.outcome,
         tally: input.go.tally,
@@ -267,7 +273,15 @@ function Session({ items, scheduled, schedules, decks, settings, history, accent
   const first = results[card.id];
   const grading =
     scheduled && !learning && first && !grades[card.id]
-      ? { suggestion: first.suggestion, summary: first.summary, intervals: first.intervals, onGrade: grade, saving, error: saveError }
+      ? {
+          suggestion: first.suggestion,
+          summary: first.summary,
+          intervals: first.intervals,
+          smart: settings.grading === "smart",
+          onGrade: grade,
+          saving,
+          error: saveError,
+        }
       : null;
   const learningProps = learning && go ? { note: go.learnNote, onContinue: continueLearning, saving, error: saveError } : null;
   const attempt = failures[card.id] ?? 0;

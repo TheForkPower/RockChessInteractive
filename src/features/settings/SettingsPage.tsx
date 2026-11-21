@@ -5,6 +5,7 @@ import { STORAGE_ERROR } from "../../data/repo";
 import { IDLE_CHOICES, NEW_PER_DAY_CHOICES, RETENTION_CHOICES, type Settings } from "../../domain/settings";
 import { Feedback } from "../../ui/Feedback";
 import { Segmented } from "../../ui/Segmented";
+import { GradingChoice } from "./GradingChoice";
 
 const idleLabel = (seconds: number) => (seconds < 60 ? `${seconds} s` : `${seconds / 60} min`);
 
@@ -54,6 +55,12 @@ export function SettingsPage() {
         </div>
       ) : null}
 
+      <Section id="grading" title="Grading">
+        <Setting label="How cards are graded">
+          <GradingChoice value={settings.grading} onChange={(grading) => void change({ grading })} />
+        </Setting>
+      </Section>
+
       <Section id="scheduling" title="Scheduling">
         <Setting label="New cards per day" hint="How many cards you haven't seen are introduced each day, across all decks.">
           <Segmented
@@ -74,9 +81,16 @@ export function SettingsPage() {
       </Section>
 
       <Section id="timing" title="Response time">
-        <Setting label="Suggest Easy for quick answers" hint="It only ever raises the suggestion. A slow answer never lowers it, and you choose the grade.">
+        <Setting
+          label="Count response time"
+          hint={
+            settings.grading === "smart"
+              ? "A right answer much quicker than usual can be Easy, and one much slower can be Hard. Time spent away or idle never counts."
+              : "A right answer much quicker than usual is suggested as Easy. A slow answer never lowers the suggestion."
+          }
+        >
           <Segmented
-            label="Suggest Easy for quick answers"
+            label="Count response time"
             value={settings.timeSignal ? "on" : "off"}
             options={[
               { value: "on", label: "On" },

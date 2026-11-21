@@ -754,6 +754,101 @@ describe("Review: timing", () => {
   });
 });
 
+describe("Review: smart grading", () => {
+  it("picks the grade, says why, and saves it when you move on", async () => {
+    await saveSettings({ grading: "smart" });
+    const id = await dueDeck();
+    const [card] = await listCards(id);
+    renderReview(`?deck=${id}`, { scheduled: true });
+    await screen.findByText("Card 1 of 1");
+    await play(E4);
+    expect(await screen.findByText(/Graded Good\. It comes back in \d+ (day|days|month|months)\. Right first time\./)).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "How did it go?" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Change grade" })).toBeInTheDocument();
+    await click("See results");
+    expect(await finished("You went through 1 card")).toBeInTheDocument();
+    expect(await lastReview()).toMatchObject({ rating: 3, suggested: 3, grading: "smart", outcome: "first-try", cardId: card.id });
+  });
+
+  it("lets you change the grade before moving on, and saves what you picked", async () => {
+    await saveSettings({ grading: "smart" });
+    const id = await dueDeck();
+    renderReview(`?deck=${id}`, { scheduled: true });
+    await screen.findByText("Card 1 of 1");
+    await play(E4);
+    await click("Change grade");
+    expect(await gradeGroup()).toBeInTheDocument();
+    await userEvent.click(await gradeButton("Easy"));
+    await finished("You went through 1 card");
+    expect(await lastReview()).toMatchObject({ rating: 4, suggested: 3, grading: "smart" });
+  });
+
+  it("grades a card Hard when it took a hint or one wrong try, and Again after two", async () => {
+    await saveSettings({ grading: "smart" });
+    const id = await dueDeck();
+    renderReview(`?deck=${id}`, { scheduled: true });
+    await screen.findByText("Card 1 of 1");
+    expect(dropMove({ from: "d2", to: "d4" })).toBe(false);
+    await play(E4);
+    expect(await screen.findByText(/Graded Hard\. .* It took a hint or a second try\./)).toBeInTheDocument();
+  });
+
+  it("grades Again after two wrong tries, even when the card is then finished", async () => {
+    await saveSettings({ grading: "smart" });
+    const id = await dueDeck();
+    renderReview(`?deck=${id}`, { scheduled: true });
+    await screen.findByText("Card 1 of 1");
+    expect(dropMove({ from: "d2", to: "d4" })).toBe(false);
+    expect(dropMove({ from: "c2", to: "c4" })).toBe(false);
+    await play(E4);
+    expect(await screen.findByText(/Graded Again\. .* two or more wrong tries\./)).toBeInTheDocument();
+  });
+
+  it("grades a right answer Easy when it is much quicker than usual, and Hard when it is much slower", async () => {
+    await saveSettings({ grading: "smart" });
+    await seedFastHistory(10);
+    let now = 1_000_000;
+    const quick = await dueDeck("Quick");
+    const first = renderReview(`?deck=${quick}`, { scheduled: true, clock: () => now });
+    await screen.findByText("Card 1 of 1");
+    now += 1500;
+    await play(E4);
+    expect(await screen.findByText(/Graded Easy\. .* quicker than usual\. Took 2 s\./)).toBeInTheDocument();
+    first.unmount();
+
+    const slow = await dueDeck("Slow");
+    renderReview(`?deck=${slow}`, { scheduled: true, clock: () => now });
+    await screen.findByText("Card 1 of 1");
+    now += 25_000;
+    await play(E4);
+    expect(await screen.findByText(/Graded Hard\. .* much slower than usual\. Took 25 s\./)).toBeInTheDocument();
+  });
+
+  it("leaves speed out when response time is switched off", async () => {
+    await saveSettings({ grading: "smart", timeSignal: false });
+    await seedFastHistory(10);
+    let now = 1_000_000;
+    const id = await dueDeck();
+    renderReview(`?deck=${id}`, { scheduled: true, clock: () => now });
+    await screen.findByText("Card 1 of 1");
+    now += 25_000;
+    await play(E4);
+    expect(await screen.findByText(/Graded Good\./)).toBeInTheDocument();
+  });
+
+  it("keeps the four buttons in manual grading, and records that it was manual", async () => {
+    const id = await dueDeck();
+    renderReview(`?deck=${id}`, { scheduled: true });
+    await screen.findByText("Card 1 of 1");
+    await play(E4);
+    expect(await gradeGroup()).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Change grade" })).not.toBeInTheDocument();
+    await userEvent.click(await gradeButton("Good"));
+    await finished("You went through 1 card");
+    expect(await lastReview()).toMatchObject({ grading: "manual" });
+  });
+});
+
 describe("Learn: new cards", () => {
   it("shows the answer first, then asks for it, and schedules the card when it is played right", async () => {
     const id = await makeDeck("Openings", drafts("1. e4 e5", "moves"));

@@ -24,6 +24,8 @@ export type Grading = {
   summary: string;
   /** How long until the card returns for each grade, e.g. "3 days". */
   intervals: Record<Grade, string>;
+  /** Smart grading: the app has picked the grade, and the person can accept it or change it. */
+  smart: boolean;
   onGrade: (grade: Grade) => void;
   /** True while a grade is being saved. */
   saving: boolean;
@@ -107,6 +109,7 @@ export function ReviewCard({
   }, [card]);
   const [shownId, setShownId] = useState<string | null>(null);
   const [marked, setMarked] = useState<"idle" | "added" | "already" | "failed">("idle");
+  const [changing, setChanging] = useState(false);
 
   async function markDifficult() {
     if (!onMarkDifficult) return;
@@ -361,18 +364,29 @@ export function ReviewCard({
                 <p id="grade-summary" className="mb-4">
                   {grading.summary}
                 </p>
-                <div role="group" aria-label="How did it go?" aria-describedby="grade-summary" className="grid grid-cols-2 gap-3 pt-2 sm:grid-cols-4">
-                  {GRADES.map((grade) => (
-                    <GradeButton
-                      key={grade}
-                      grade={grade}
-                      interval={grading.intervals[grade]}
-                      suggested={grade === grading.suggestion.grade}
-                      disabled={grading.saving}
-                      onSelect={grading.onGrade}
-                    />
-                  ))}
-                </div>
+                {grading.smart && !changing ? (
+                  <div className="flex flex-wrap gap-3">
+                    <Button disabled={grading.saving} onClick={() => grading.onGrade(grading.suggestion.grade)}>
+                      {isLast ? "See results" : "Next card"}
+                    </Button>
+                    <Button variant="secondary" disabled={grading.saving} onClick={() => setChanging(true)}>
+                      Change grade
+                    </Button>
+                  </div>
+                ) : (
+                  <div role="group" aria-label="How did it go?" aria-describedby="grade-summary" className="grid grid-cols-2 gap-3 pt-2 sm:grid-cols-4">
+                    {GRADES.map((grade) => (
+                      <GradeButton
+                        key={grade}
+                        grade={grade}
+                        interval={grading.intervals[grade]}
+                        suggested={grade === grading.suggestion.grade}
+                        disabled={grading.saving}
+                        onSelect={grading.onGrade}
+                      />
+                    ))}
+                  </div>
+                )}
                 {grading.error ? (
                   <p role="alert" className="mt-3 font-semibold text-bad-edge">
                     {grading.error}

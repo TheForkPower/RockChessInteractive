@@ -33,8 +33,38 @@ describe("CardEditor", () => {
     setup();
     expect(input("Question").value).toBe("White to move.");
     expect(input("Answer").value).toBe("1. e4");
-    expect(input("Continuation (PGN)").value).toBe("1. e4 e5 2. Nf3 (2. Bc4) 2... Nc6 3. Bb5 a6");
+    expect(input("Explanation (optional)").value).toBe("");
     expect(input("Deck").value).toBe("d1");
+  });
+
+  it("has one box for the explanation, and no separate continuation or notes", () => {
+    setup();
+    expect(screen.getAllByRole("textbox", { name: /Explanation/ })).toHaveLength(1);
+    expect(screen.queryByRole("textbox", { name: /Continuation/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: /Notes/ })).not.toBeInTheDocument();
+  });
+
+  it("keeps the less used fields under More options", async () => {
+    setup();
+    expect(screen.queryByLabelText("Hint (optional)")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Tags (optional)")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "More options" }));
+    expect(screen.getByLabelText("Hint (optional)")).toBeInTheDocument();
+    expect(screen.getByLabelText("Other accepted moves (optional)")).toBeInTheDocument();
+    expect(screen.getByLabelText("Type of position")).toBeInTheDocument();
+    expect(screen.getByLabelText("Tags (optional)")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Fewer options" }));
+    expect(screen.queryByLabelText("Hint (optional)")).not.toBeInTheDocument();
+  });
+
+  it("opens More options when the card already has a hint, tags or another type", () => {
+    setup({ ...draft(), hint: "Think centre." });
+    expect(input("Hint (optional)").value).toBe("Think centre.");
+  });
+
+  it("doesn't ask for a deck when it is already decided", () => {
+    render(<CardEditor mode="new" initial={draft()} decks={decks} deckId="d1" fixedDeck onSave={async () => null} onCancel={() => {}} />);
+    expect(screen.queryByLabelText("Deck")).not.toBeInTheDocument();
   });
 
   it("previews the continuation with clickable moves, variations included", () => {
@@ -44,20 +74,38 @@ describe("CardEditor", () => {
     expect(screen.getByTestId("board")).toHaveAttribute("data-fen", expect.stringContaining("4P3"));
   });
 
-  it("updates the preview as the continuation is edited", () => {
-    setup();
-    change("Continuation (PGN)", "1. d4 d5");
-    expect(screen.getByRole("button", { name: "1. d4" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "2. Bc4" })).not.toBeInTheDocument();
+  it("keeps the line the card came from when the answer still starts it", async () => {
+    const { onSave } = setup();
+    await userEvent.click(screen.getByRole("button", { name: "Save card" }));
+    expect((onSave.mock.calls[0][1] as CardDraft).continuation).toBe("1. e4 e5 2. Nf3 (2. Bc4) 2... Nc6 3. Bb5 a6");
   });
 
-  it("reports a continuation that doesn't work, and won't save it", async () => {
+  it("follows the answer instead once it no longer starts the saved line", async () => {
     const { onSave } = setup();
-    change("Continuation (PGN)", "1. e4 e4");
-    expect(screen.getAllByRole("alert").some((alert) => /isn't a legal move/.test(alert.textContent ?? ""))).toBe(true);
+    change("Answer", "d4");
+    expect(screen.getByRole("button", { name: "1. d4" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "2. Bc4" })).not.toBeInTheDocument();
+    expect(screen.getByText(/no longer starts with it/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Save card" }));
-    expect(onSave).not.toHaveBeenCalled();
-    expect(screen.getByText("Fix the highlighted fields first.")).toBeInTheDocument();
+    expect((onSave.mock.calls[0][1] as CardDraft).continuation).toBe("");
+  });
+
+  it("shows the answer on the back of a card made from scratch, and saves no continuation", async () => {
+    const { onSave } = setup({ ...draft(), continuation: "" });
+    expect(screen.getByRole("button", { name: "1. e4" })).toBeInTheDocument();
+    change("Answer", "d4");
+    expect(screen.getByRole("button", { name: "1. d4" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Save card" }));
+    expect((onSave.mock.calls[0][1] as CardDraft).continuation).toBe("");
+  });
+
+  it("folds an old card's notes into its explanation", async () => {
+    const { onSave } = setup({ ...draft(), explanation: "Claim the centre.", notes: "Most common." });
+    expect(input("Explanation (optional)").value).toBe("Claim the centre.\n\nMost common.");
+    await userEvent.click(screen.getByRole("button", { name: "Save card" }));
+    const saved = onSave.mock.calls[0][1] as CardDraft;
+    expect(saved.explanation).toBe("Claim the centre.\n\nMost common.");
+    expect(saved.notes).toBe("");
   });
 
   it("switches to a line card, offering the first six moves of the line", async () => {
@@ -87,8 +135,9 @@ describe("CardEditor", () => {
     expect(screen.getByText(/needs exactly one move/)).toBeInTheDocument();
   });
 
-  it("reads other accepted moves, drops repeats of the answer, and rejects illegal ones", () => {
+  it("reads other accepted moves, drops repeats of the answer, and rejects illegal ones", async () => {
     setup();
+    await userEvent.click(screen.getByRole("button", { name: "More options" }));
     change("Other accepted moves (optional)", "d4, e4, c4");
     expect(screen.queryByText(/isn't a legal move/)).not.toBeInTheDocument();
     change("Other accepted moves (optional)", "d4, Qh5");
@@ -97,11 +146,11 @@ describe("CardEditor", () => {
 
   it("saves the text fields, tags and extra moves", async () => {
     const { onSave } = setup();
+    await userEvent.click(screen.getByRole("button", { name: "More options" }));
     change("Question", " What does White play? ");
     change("Hint (optional)", "Think centre.");
     change("Other accepted moves (optional)", "d4, c4");
-    change("Explanation", "Claim the centre.");
-    change("Notes (optional)", "Most common.");
+    change("Explanation (optional)", "Claim the centre.");
     change("Tags (optional)", "kings pawn, basics, Basics");
     await userEvent.selectOptions(input("Type of position"), "strategy");
     await userEvent.click(screen.getByRole("button", { name: "Save card" }));
@@ -110,7 +159,7 @@ describe("CardEditor", () => {
       prompt: "What does White play?",
       hint: "Think centre.",
       explanation: "Claim the centre.",
-      notes: "Most common.",
+      notes: "",
       tags: ["kings pawn", "basics"],
       category: "strategy",
       kind: "move",

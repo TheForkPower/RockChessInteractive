@@ -168,6 +168,9 @@ export const MIN_TIMINGS = 8;
 /** "Fast" means this share of your usual time per move, or less. */
 export const FAST_SHARE = 0.5;
 
+/** "Much slower" means this many times your usual time per move, or more. Only smart grading uses it. */
+export const SLOW_SHARE = 2.5;
+
 export function median(values: number[]): number | null {
   if (values.length === 0) return null;
   const sorted = [...values].sort((a, b) => a - b);
@@ -222,4 +225,30 @@ export function suggestGrade({ outcome, timing, playerMoves, history, useTime }:
     return { grade: "easy", reason: "Right first time, and quicker than usual.", nudged: true };
   }
   return { ...base, nudged: false };
+}
+
+export type SmartInput = SuggestInput & {
+  /** Wrong moves tried on this card. */
+  mistakes: number;
+};
+
+/**
+ * The grade smart grading picks. It starts from what the suggestion would be, then adds two things:
+ * two or more wrong tries is Again, and a right-first-time answer that took much longer than usual is Hard.
+ * As with the suggestion, a time that may be off (you left the page, or sat idle) counts for nothing,
+ * and with too little history there is nothing to compare against.
+ */
+export function smartGrade(input: SmartInput): Suggestion {
+  const { outcome, timing, playerMoves, history, useTime, mistakes } = input;
+  if (outcome === "with-help" && mistakes >= 2) {
+    return { grade: "again", reason: "It took two or more wrong tries.", nudged: false };
+  }
+  if (outcome === "first-try" && useTime && timing.reliable && history.length >= MIN_TIMINGS) {
+    const usual = median(history);
+    const perMove = timing.activeMs / Math.max(1, playerMoves);
+    if (usual !== null && usual > 0 && perMove >= usual * SLOW_SHARE) {
+      return { grade: "hard", reason: "Right first time, but much slower than usual.", nudged: true };
+    }
+  }
+  return suggestGrade(input);
 }

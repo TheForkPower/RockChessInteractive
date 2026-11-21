@@ -68,8 +68,10 @@ describe("settings", () => {
   });
 
   it("repairs saved values that make no sense", async () => {
-    await db.meta.put({ key: "settings", value: { desiredRetention: 7, timeSignal: "yes", idleSeconds: -3, newPerDay: 9999 } });
-    expect(await getSettings()).toEqual({ desiredRetention: 0.95, timeSignal: true, idleSeconds: 15, newPerDay: 50 });
+    await db.meta.put({ key: "settings", value: { grading: "clever", desiredRetention: 7, timeSignal: "yes", idleSeconds: -3, newPerDay: 9999 } });
+    expect(await getSettings()).toEqual({ grading: "manual", desiredRetention: 0.95, timeSignal: true, idleSeconds: 15, newPerDay: 50 });
+    await db.meta.put({ key: "settings", value: { grading: "smart" } });
+    expect((await getSettings()).grading).toBe("smart");
   });
 });
 

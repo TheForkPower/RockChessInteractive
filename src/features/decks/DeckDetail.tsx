@@ -6,7 +6,7 @@ import { useCards, useDecks, useSchedules } from "../../data/hooks";
 import { answerText, CATEGORIES, cardToDraft, type Card, type CardDraft } from "../../domain/cards";
 import { colorOf, gradientOf } from "../../domain/deckColors";
 import { dueLabel } from "../../domain/scheduling";
-import { Button } from "../../ui/Button";
+import { Button, ButtonLink } from "../../ui/Button";
 import { Feedback } from "../../ui/Feedback";
 import { fieldClass } from "../../ui/Field";
 import { ChevronLeftIcon } from "../../ui/Icons";
@@ -149,6 +149,15 @@ export function DeckDetail({ deck, action, onSettled, onGone }: Props) {
         </div>
       </header>
 
+      {deck.theme === "difficult" ? null : (
+        <div className="mt-5 flex flex-wrap gap-3">
+          <ButtonLink to={`/create?deck=${deck.id}`}>Add a card</ButtonLink>
+          <ButtonLink to={`/create?deck=${deck.id}&from=pgn`} variant="secondary">
+            Add from a PGN
+          </ButtonLink>
+        </div>
+      )}
+
       <div className="mt-5 flex flex-wrap gap-3">
         <Button variant="secondary" aria-expanded={panel === "rename"} onClick={() => toggle("rename")}>
           Rename
@@ -255,12 +264,8 @@ export function DeckDetail({ deck, action, onSettled, onGone }: Props) {
             other deck with Mark as difficult.
           </p>
         ) : (
-          <p className="mt-8 text-ink-soft">
-            This deck has no cards. Make some on the{" "}
-            <Link to="/create" className="font-semibold underline underline-offset-4">
-              Create page
-            </Link>
-            .
+          <p className="mt-8 max-w-xl text-ink-soft">
+            Nothing in here yet. Add a card to make the first one, or build cards from a PGN.
           </p>
         )
       ) : (

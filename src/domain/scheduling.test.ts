@@ -7,6 +7,7 @@ import {
   median,
   previewGrades,
   recallChance,
+  smartGrade,
   suggestGrade,
   type Schedule,
 } from "./scheduling";
@@ -171,5 +172,53 @@ describe("the suggested grade", () => {
   it("does nothing with time when the setting is off", () => {
     const result = suggestGrade({ ...base, useTime: false, outcome: "first-try", timing: timing({ activeMs: 500 }) });
     expect(result.grade).toBe("good");
+  });
+});
+
+describe("smart grading", () => {
+  const history = Array.from({ length: 10 }, () => 8000);
+  const base = { playerMoves: 1, history, useTime: true, mistakes: 0 };
+
+  it("follows the outcome like the suggestion does", () => {
+    expect(smartGrade({ ...base, outcome: "first-try", timing: timing({ activeMs: 8000 }) }).grade).toBe("good");
+    expect(smartGrade({ ...base, outcome: "with-help", mistakes: 1, timing: timing() }).grade).toBe("hard");
+    expect(smartGrade({ ...base, outcome: "with-help", mistakes: 0, timing: timing() }).grade).toBe("hard");
+    expect(smartGrade({ ...base, outcome: "partial", timing: timing() }).grade).toBe("again");
+    expect(smartGrade({ ...base, outcome: "shown", timing: timing() }).grade).toBe("again");
+  });
+
+  it("two or more wrong tries is Again, even if the card was finished", () => {
+    const result = smartGrade({ ...base, outcome: "with-help", mistakes: 2, timing: timing() });
+    expect(result.grade).toBe("again");
+    expect(result.reason).toMatch(/wrong tries/);
+  });
+
+  it("a quick right answer is Easy", () => {
+    const result = smartGrade({ ...base, outcome: "first-try", timing: timing({ activeMs: 3000 }) });
+    expect(result.grade).toBe("easy");
+    expect(result.nudged).toBe(true);
+  });
+
+  it("a right answer much slower than usual is Hard, and says so", () => {
+    const result = smartGrade({ ...base, outcome: "first-try", timing: timing({ activeMs: 25_000 }) });
+    expect(result.grade).toBe("hard");
+    expect(result.reason).toMatch(/slower than usual/);
+    expect(result.nudged).toBe(true);
+  });
+
+  it("a slightly slow answer is still Good", () => {
+    expect(smartGrade({ ...base, outcome: "first-try", timing: timing({ activeMs: 15_000 }) }).grade).toBe("good");
+  });
+
+  it("compares per move", () => {
+    expect(smartGrade({ ...base, playerMoves: 4, outcome: "first-try", timing: timing({ activeMs: 60_000 }) }).grade).toBe("good");
+    expect(smartGrade({ ...base, playerMoves: 4, outcome: "first-try", timing: timing({ activeMs: 85_000 }) }).grade).toBe("hard");
+  });
+
+  it("leaves time out when it is switched off, unreliable, or has too little history", () => {
+    const slow = timing({ activeMs: 120_000 });
+    expect(smartGrade({ ...base, useTime: false, outcome: "first-try", timing: slow }).grade).toBe("good");
+    expect(smartGrade({ ...base, outcome: "first-try", timing: timing({ activeMs: 120_000, reliable: false, flags: ["idle"] }) }).grade).toBe("good");
+    expect(smartGrade({ ...base, history: [8000, 8000], outcome: "first-try", timing: slow }).grade).toBe("good");
   });
 });

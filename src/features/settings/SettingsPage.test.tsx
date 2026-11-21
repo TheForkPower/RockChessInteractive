@@ -27,6 +27,17 @@ describe("Settings", () => {
     expect(screen.getByRole("radio", { name: "30 s" })).toHaveAttribute("aria-checked", "true");
     expect(screen.getByRole("radio", { name: "10" })).toHaveAttribute("aria-checked", "true");
     expect(screen.getAllByRole("radio", { name: "On" })[0]).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("radio", { name: "Manual" })).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("switches between manual and smart grading", async () => {
+    renderSettings();
+    await userEvent.click(await screen.findByRole("radio", { name: "Smart" }));
+    await waitFor(async () => expect((await getSettings()).grading).toBe("smart"));
+    expect(await screen.findByText(/The app picks the grade/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("radio", { name: "Manual" }));
+    await waitFor(async () => expect((await getSettings()).grading).toBe("manual"));
+    expect(await screen.findByText(/You press Again, Hard, Good or Easy/)).toBeInTheDocument();
   });
 
   it("saves a change and keeps it", async () => {

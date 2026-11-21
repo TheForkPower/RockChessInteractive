@@ -40,8 +40,10 @@ export type ReviewEntry = {
   reviewedAt: number;
   /** 1 Again, 2 Hard, 3 Good, 4 Easy. What was pressed, and what FSRS was given. */
   rating: 1 | 2 | 3 | 4;
-  /** The grade the buttons suggested. */
+  /** The grade the app suggested, or picked, when grading was smart. */
   suggested: 1 | 2 | 3 | 4;
+  /** Who picks the grade: the person ("manual") or the app ("smart", which the person could still change). Older lines have none. */
+  grading?: "manual" | "smart";
   /** True when response time lifted the suggestion. */
   nudged: boolean;
   outcome: Outcome;

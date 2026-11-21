@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "../../data/db";
-import { listCards, listDecks } from "../../data/repo";
+import { createDeck, listCards, listDecks } from "../../data/repo";
 import { START_FEN } from "../../domain/fen";
 import { boardProps, dropMove } from "../../test/boardMock";
 import { CreatePage } from "./CreatePage";
@@ -19,15 +19,14 @@ const pick = (name: string) => userEvent.click(screen.getByRole("radio", { name 
 /** Typing { and ( through userEvent is awkward, so set the text directly. */
 const setText = (label: string, value: string) => fireEvent.change(screen.getByLabelText(label), { target: { value } });
 
-/** The page opens on a choice of how to start. Most tests go straight on to one of the ways. */
-function renderPage(way: "fen" | "pgn" | "choose" = "fen") {
+/** The page opens on a position, with a switch to a PGN. Most tests start on the position. */
+function renderPage(way: "fen" | "pgn" = "fen", path = "/create") {
   const result = render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[path]}>
       <CreatePage />
     </MemoryRouter>,
   );
-  if (way === "fen") fireEvent.click(screen.getByRole("button", { name: /^Paste a FEN/ }));
-  if (way === "pgn") fireEvent.click(screen.getByRole("button", { name: /^Paste or upload a PGN/ }));
+  if (way === "pgn") fireEvent.click(screen.getByRole("radio", { name: "A PGN" }));
   return result;
 }
 
@@ -210,7 +209,7 @@ describe("Create page: making a card", () => {
   it("is not available until there is a move to answer with", () => {
     renderPage();
     expect(screen.getByRole("button", { name: "Make a card" })).toHaveAttribute("aria-disabled", "true");
-    expect(screen.getByRole("button", { name: "Make a deck from this line" })).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByRole("button", { name: "Make cards from this line" })).toHaveAttribute("aria-disabled", "true");
   });
 
   it("makes a card from a position in a PGN, with the variations on the back, and saves it to a new deck", async () => {
@@ -223,11 +222,11 @@ describe("Create page: making a card", () => {
 
     expect(screen.getByRole("heading", { level: 1, name: "Make a card" })).toBeInTheDocument();
     expect((screen.getByLabelText("Answer") as HTMLInputElement).value).toBe("2. Nf3");
-    expect((screen.getByLabelText("Continuation (PGN)") as HTMLTextAreaElement).value).toBe("2. Nf3 (2. Bc4 Nf6) 2... Nc6");
+    expect(screen.getByRole("button", { name: "2. Bc4" })).toBeInTheDocument();
     expect((screen.getByLabelText("Question") as HTMLInputElement).value).toBe("White to move.");
 
     await userEvent.type(screen.getByLabelText("New deck name"), "Open Games");
-    fireEvent.change(screen.getByLabelText("Explanation"), { target: { value: "Develop and attack e5." } });
+    fireEvent.change(screen.getByLabelText("Explanation (optional)"), { target: { value: "Develop and attack e5." } });
     await click("Save card");
 
     expect(await screen.findByText("Saved 1 card to Open Games")).toBeInTheDocument();
@@ -312,7 +311,7 @@ describe("Create page: making a deck", () => {
     renderPage();
     setText("Moves", LINE);
     await click("Add moves");
-    await click("Make a deck from this line");
+    await click("Make cards from this line");
   }
 
   it("shows how many cards it will make", async () => {
@@ -328,7 +327,7 @@ describe("Create page: making a deck", () => {
   it("saves a card for each of White's moves, with the variations on the back", async () => {
     await openBuilder();
     await userEvent.type(screen.getByLabelText("New deck name"), "Ruy Lopez");
-    await click("Make deck");
+    await click("Add cards");
     expect(await screen.findByText("Saved 3 cards to Ruy Lopez")).toBeInTheDocument();
     const [deck] = await listDecks();
     const cards = await listCards(deck.id);
@@ -341,7 +340,7 @@ describe("Create page: making a deck", () => {
     setText("Moves", LINE);
     await click("Add moves");
     await click("1... e5");
-    await click("Make a deck from this line");
+    await click("Make cards from this line");
     await pick("The position on the board");
     expect(screen.getByText("Answers: Nf3, Bb5")).toBeInTheDocument();
   });
@@ -350,27 +349,27 @@ describe("Create page: making a deck", () => {
     renderPage();
     setText("Moves", "1. e4");
     await click("Add moves");
-    await click("Make a deck from this line");
+    await click("Make cards from this line");
     await pick("Black");
     expect(screen.getByText("There are no moves for Black in this line.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Make deck" })).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByRole("button", { name: "Add cards" })).toHaveAttribute("aria-disabled", "true");
 
     await pick("White");
     await userEvent.type(screen.getByLabelText("New deck name"), "Once");
-    await click("Make deck");
+    await click("Add cards");
     await screen.findByText(/Saved 1 card/);
 
-    await click("Make a deck from this line");
+    await click("Make cards from this line");
     await userEvent.selectOptions(screen.getByLabelText("Deck"), "Once (1)");
-    await click("Make deck");
+    await click("Add cards");
     expect(await screen.findByText(/Once already has a card with that position/)).toBeInTheDocument();
   });
 });
 
 describe("Create page: the board editor", () => {
   it("opens the editor, and a position set up there becomes the position to build from", async () => {
-    renderPage("choose");
-    await click(/^Use the board editor/);
+    renderPage();
+    await click("Set up the board by hand");
     expect(screen.getByRole("heading", { level: 1, name: "Board editor" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /^e2,/ }));
     await userEvent.click(screen.getByRole("button", { name: /^e4,/ }));
@@ -382,13 +381,12 @@ describe("Create page: the board editor", () => {
   });
 
   it("cancelling leaves the position as it was", async () => {
-    renderPage("choose");
-    await click(/^Use the board editor/);
+    renderPage();
+    await click("Set up the board by hand");
     await userEvent.click(screen.getByRole("button", { name: /^e2,/ }));
     await userEvent.click(screen.getByRole("button", { name: /^e4,/ }));
     await click("Cancel");
-    expect(screen.getByRole("heading", { level: 2, name: "How do you want to start?" })).toBeInTheDocument();
-    await click(/^Paste a FEN/);
+    expect(screen.getByRole("heading", { level: 1, name: "Create cards" })).toBeInTheDocument();
     expect(board()).toHaveAttribute("data-fen", START_FEN);
   });
 
@@ -400,32 +398,79 @@ describe("Create page: the board editor", () => {
   });
 });
 
-describe("Create page: choosing how to start", () => {
-  it("shows the three ways first and nothing else", () => {
-    renderPage("choose");
+describe("Create page: where the position comes from", () => {
+  it("opens straight on the board, with no start screen in the way", () => {
+    renderPage();
     expect(screen.getByRole("heading", { level: 1, name: "Create cards" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Paste a FEN/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Paste or upload a PGN/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Use the board editor/ })).toBeInTheDocument();
-    expect(screen.queryByTestId("board")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("FEN")).not.toBeInTheDocument();
-    expect(screen.queryByText(/Then make one card, or a deck/)).not.toBeInTheDocument();
+    expect(board()).toHaveAttribute("data-fen", START_FEN);
+    expect(screen.getByRole("radio", { name: "A position" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.queryByText("How do you want to start?")).not.toBeInTheDocument();
   });
 
-  it("shows only the PGN box after choosing a PGN", async () => {
-    renderPage("choose");
-    await click(/^Paste or upload a PGN/);
-    expect(screen.getByLabelText("PGN")).toBeInTheDocument();
-    expect(screen.queryByLabelText("FEN")).not.toBeInTheDocument();
-    expect(board()).toBeInTheDocument();
-  });
-
-  it("goes back to the choice and keeps the position you had", async () => {
+  it("switches to the PGN box and back, keeping the position", async () => {
     renderPage();
     dropMove({ from: "e2", to: "e4" });
-    await click("Choose another way to start");
-    expect(screen.queryByTestId("board")).not.toBeInTheDocument();
-    await click(/^Paste or upload a PGN/);
+    pick("A PGN");
+    expect(await screen.findByLabelText("PGN")).toBeInTheDocument();
+    expect(screen.queryByLabelText("FEN")).not.toBeInTheDocument();
     expect(board()).toHaveAttribute("data-fen", AFTER_E4);
+    await pick("A position");
+    expect(fenField().value).toBe(AFTER_E4);
+  });
+
+  it("opens on the PGN box when asked to", () => {
+    renderPage("fen", "/create?from=pgn");
+    expect(screen.getByLabelText("PGN")).toBeInTheDocument();
+  });
+});
+
+describe("Create page: adding to a deck", () => {
+  async function deckNamed(name: string) {
+    const made = await createDeck(name);
+    if (!made.ok) throw new Error(made.error);
+    return made.deck.id;
+  }
+
+  it("says which deck it is saving to, and saves a card there without asking", async () => {
+    const id = await deckNamed("Najdorf");
+    await deckNamed("Other");
+    renderPage("fen", `/create?deck=${id}`);
+    expect(await screen.findByText(/Saving to Najdorf/)).toBeInTheDocument();
+    dropMove({ from: "e2", to: "e4" });
+    await click("Make a card");
+    expect(await screen.findByText(/Saving to Najdorf\./)).toBeInTheDocument();
+    expect(screen.queryByLabelText("Deck")).not.toBeInTheDocument();
+    await click("Save card");
+    expect(await screen.findByText("Saved 1 card to Najdorf")).toBeInTheDocument();
+    expect(await listCards(id)).toHaveLength(1);
+  });
+
+  it("builds several cards into that deck too", async () => {
+    const id = await deckNamed("Najdorf");
+    renderPage("fen", `/create?deck=${id}`);
+    await screen.findByText(/Saving to Najdorf/);
+    setText("Moves", "1. e4 e5 2. Nf3 Nc6");
+    await click("Add moves");
+    await click("Make cards from this line");
+    expect(screen.queryByLabelText("Deck")).not.toBeInTheDocument();
+    await click("Add cards");
+    expect(await screen.findByText("Saved 2 cards to Najdorf")).toBeInTheDocument();
+    expect(await listCards(id)).toHaveLength(2);
+  });
+
+  it("lets you choose another deck", async () => {
+    const id = await deckNamed("Najdorf");
+    renderPage("fen", `/create?deck=${id}`);
+    await screen.findByText(/Saving to Najdorf/);
+    await click("Choose another deck");
+    expect(screen.queryByText(/Saving to Najdorf/)).not.toBeInTheDocument();
+    dropMove({ from: "e2", to: "e4" });
+    await click("Make a card");
+    expect(screen.getByLabelText("Deck")).toBeInTheDocument();
+  });
+
+  it("ignores a deck that doesn't exist", async () => {
+    renderPage("fen", "/create?deck=gone");
+    expect(screen.queryByText(/Saving to/)).not.toBeInTheDocument();
   });
 });

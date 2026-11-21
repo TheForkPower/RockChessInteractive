@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import type { BoardColor } from "cm-chessboard/src/Chessboard.js";
 import { Board } from "../../board/Board";
 import { addCards, createDeck, STORAGE_ERROR } from "../../data/repo";
@@ -26,13 +26,13 @@ import { StepButtons } from "../../moves/StepButtons";
 import { Button } from "../../ui/Button";
 import { Feedback } from "../../ui/Feedback";
 import { PageHeader } from "../../ui/PageHeader";
+import { Segmented } from "../../ui/Segmented";
 import { CardEditor, type DeckChoice } from "../cards/CardEditor";
 import { DeckBuilder } from "./DeckBuilder";
 import { PgnPanel, PositionPanel } from "./SourcePanels";
 
 type Mode = "find" | "card" | "deck";
 type Method = "fen" | "pgn";
-type Stage = "choose" | "work";
 type Source = { title: string; pgn: string; headers: Record<string, string> } | null;
 type Notice = { title: string; body?: string; deckId: string } | null;
 
@@ -46,15 +46,17 @@ export function CreatePage() {
   const [currentId, setCurrentId] = useState(tree.rootId);
   const [orientation, setOrientation] = useState<BoardColor>("w");
   const [source, setSource] = useState<Source>(null);
-  const [stage, setStage] = useState<Stage>("choose");
-  const [method, setMethod] = useState<Method>("fen");
+  const [params, setParams] = useSearchParams();
+  const [method, setMethod] = useState<Method>(params.get("from") === "pgn" ? "pgn" : "fen");
   const [mode, setMode] = useState<Mode>("find");
   const [cardDraft, setCardDraft] = useState<CardDraft | null>(null);
   const [cardError, setCardError] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
-  /** Where the board editor was opened from, or null while it is closed. */
-  const [editingFrom, setEditingFrom] = useState<Stage | null>(null);
+  const [editing, setEditing] = useState(false);
   const decks = useDecks();
+
+  /** The deck the person came from, when they pressed Add a card on a deck. Cards are saved there without asking. */
+  const contextDeck = decks?.find((item) => item.id === params.get("deck")) ?? null;
 
   const current = getNode(tree, currentId);
   const status = describeStatus(new Game(current.fen));
@@ -170,7 +172,7 @@ export function CreatePage() {
     return (
       <div>
         <PageHeader title="Make a card">
-          Set the question and the answer, then add an explanation and the moves that follow.
+          {contextDeck ? `Saving to ${contextDeck.name}. ` : ""}Set the question and the answer. The explanation is optional.
         </PageHeader>
         <div className="mt-10">
           {decks === undefined ? (
@@ -180,6 +182,8 @@ export function CreatePage() {
               mode="new"
               initial={cardDraft}
               decks={decks ?? []}
+              deckId={contextDeck?.id}
+              fixedDeck={contextDeck !== null}
               onSave={(choice, draft) => saveCards(choice, [draft])}
               onCancel={() => setMode("find")}
             />
@@ -229,7 +233,9 @@ export function CreatePage() {
   if (mode === "deck") {
     return (
       <div>
-        <PageHeader title="Create cards" />
+        <PageHeader title="Make cards from this line">
+          {contextDeck ? `Saving to ${contextDeck.name}.` : null}
+        </PageHeader>
         <div className="mt-10 grid gap-10 lg:grid-cols-[minmax(0,30rem)_minmax(0,1fr)]">
           <div className="lg:sticky lg:top-6 lg:self-start">{board}</div>
           {decks === undefined ? (
@@ -239,6 +245,8 @@ export function CreatePage() {
               tree={tree}
               currentId={currentId}
               decks={decks ?? []}
+              deckId={contextDeck?.id}
+              fixedDeck={contextDeck !== null}
               onBuild={saveCards}
               onCancel={() => setMode("find")}
             />
@@ -257,19 +265,18 @@ export function CreatePage() {
           : "the position you set up"
         : `the position after ${moveLabel(tree, anchor.id)}`;
 
-  if (editingFrom) {
+  if (editing) {
     return (
       <div>
         <PageHeader title="Board editor" />
         <div className="mt-10">
           <BoardEditor
             initialFen={current.fen}
-            onCancel={() => setEditingFrom(null)}
+            onCancel={() => setEditing(false)}
             onUse={(fen) => {
               setFen(fen);
               setMethod("fen");
-              setStage("work");
-              setEditingFrom(null);
+              setEditing(false);
             }}
           />
         </div>
@@ -290,61 +297,26 @@ export function CreatePage() {
     </div>
   ) : null;
 
-  if (stage === "choose") {
-    const ways: { title: string; body: string; onChoose: () => void }[] = [
-      {
-        title: "Paste a FEN",
-        body: "Start from one position, then play or type the moves.",
-        onChoose: () => {
-          setMethod("fen");
-          setStage("work");
-        },
-      },
-      {
-        title: "Paste or upload a PGN",
-        body: "A game, a repertoire or a study, with its variations.",
-        onChoose: () => {
-          setMethod("pgn");
-          setStage("work");
-        },
-      },
-      {
-        title: "Use the board editor",
-        body: "Place the pieces yourself.",
-        onChoose: () => setEditingFrom("choose"),
-      },
-    ];
-    return (
-      <div>
-        <PageHeader title="Create cards" />
-        {savedNotice}
-        <h2 className="mt-10 font-display text-xl font-bold">How do you want to start?</h2>
-        <ul className="mt-4 grid max-w-4xl gap-4 sm:grid-cols-3">
-          {ways.map((way) => (
-            <li key={way.title}>
-              <button
-                type="button"
-                onClick={way.onChoose}
-                className="panel flex h-full w-full flex-col items-start gap-2 p-6 text-left transition-colors hover:bg-line/30"
-              >
-                <span className="font-display text-lg font-bold">{way.title}</span>
-                <span className="text-ink-soft">{way.body}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </div>
-    );
-  }
-
   return (
     <div>
-      <PageHeader title="Create cards" />
-      <div className="mt-4">
-        <Button variant="secondary" onClick={() => setStage("choose")}>
-          Choose another way to start
-        </Button>
-      </div>
+      <PageHeader title="Create cards">
+        {contextDeck ? (
+          <>
+            Saving to {contextDeck.name}.{" "}
+            <button
+              type="button"
+              className="font-semibold underline underline-offset-4"
+              onClick={() => {
+                const next = new URLSearchParams(params);
+                next.delete("deck");
+                setParams(next, { replace: true });
+              }}
+            >
+              Choose another deck
+            </button>
+          </>
+        ) : null}
+      </PageHeader>
 
       {savedNotice}
 
@@ -354,14 +326,25 @@ export function CreatePage() {
         <div className="space-y-10">
           <section aria-labelledby="source-heading">
             <h2 id="source-heading" className="sr-only">
-              {method === "fen" ? "Position and moves" : "Load a game"}
+              Where the position comes from
             </h2>
+            <div className="mb-6">
+              <Segmented
+                label="Where the position comes from"
+                value={method}
+                onChange={setMethod}
+                options={[
+                  { value: "fen", label: "A position" },
+                  { value: "pgn", label: "A PGN" },
+                ]}
+              />
+            </div>
             {method === "fen" ? (
               <PositionPanel
                 fen={current.fen}
                 onSetFen={setFen}
                 onStart={startAgain}
-                onOpenEditor={() => setEditingFrom("work")}
+                onOpenEditor={() => setEditing(true)}
                 onAddMoves={addTypedMoves}
               />
             ) : (
@@ -389,7 +372,7 @@ export function CreatePage() {
 
           <section aria-labelledby="make-heading" className="panel p-6">
             <h2 id="make-heading" className="font-display text-xl font-bold">
-              Make cards
+              Save as cards
             </h2>
             {anchor ? (
               <p className="mt-2 text-ink-soft">
@@ -417,7 +400,7 @@ export function CreatePage() {
                   setMode("deck");
                 }}
               >
-                Make a deck from this line
+                Make cards from this line
               </Button>
             </div>
           </section>

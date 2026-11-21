@@ -63,10 +63,39 @@ beforeEach(async () => {
 });
 
 describe("Decks page: the grid of packs", () => {
-  it("points to Create when there are no decks", async () => {
+  it("asks for a name when there are no decks, and makes an empty deck", async () => {
     renderPage();
     expect(await screen.findByText(/You have no decks yet/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Make cards/ })).toHaveAttribute("href", "/create");
+    await userEvent.type(screen.getByLabelText("Name your deck"), "Sicilian");
+    await click("Create deck");
+    expect(await screen.findByRole("heading", { level: 1, name: "Sicilian" })).toBeInTheDocument();
+    const decks = await listDecks();
+    expect(decks).toMatchObject([{ name: "Sicilian", cardCount: 0 }]);
+    expect(await screen.findByText(/Nothing in here yet/)).toBeInTheDocument();
+  });
+
+  it("opens the new deck form from the New deck tile, and can be cancelled", async () => {
+    await seed("Ruy Lopez", "1. e4 e5 2. Nf3");
+    renderPage();
+    await screen.findByRole("heading", { name: "Ruy Lopez" });
+    expect(screen.queryByLabelText("Name your deck")).not.toBeInTheDocument();
+    await click(/New deck/);
+    expect(screen.getByLabelText("Name your deck")).toBeInTheDocument();
+    await click("Cancel");
+    expect(screen.queryByLabelText("Name your deck")).not.toBeInTheDocument();
+  });
+
+  it("asks for a name, and won't repeat one that is taken", async () => {
+    await seed("Ruy Lopez", "1. e4 e5 2. Nf3");
+    renderPage();
+    await screen.findByRole("heading", { name: "Ruy Lopez" });
+    await click(/New deck/);
+    await click("Create deck");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Give the deck a name.");
+    await userEvent.type(screen.getByLabelText("Name your deck"), "ruy lopez");
+    await click("Create deck");
+    expect(await screen.findByRole("alert")).toHaveTextContent(/already have a deck called/);
+    expect(await listDecks()).toHaveLength(1);
   });
 
   it("shows each deck as a tile with its card count", async () => {
@@ -117,6 +146,22 @@ describe("Decks page: the grid of packs", () => {
     const id = await seed("Beta", "1. d4 d5");
     renderPage(`/decks?deck=${id}`);
     expect(await screen.findByRole("heading", { level: 1, name: "Beta" })).toBeInTheDocument();
+  });
+
+  it("offers to add a card, or cards from a PGN, to this deck", async () => {
+    const id = await seed("Alpha", "1. e4 e5");
+    await openDeck(id, "Alpha");
+    expect(screen.getByRole("link", { name: "Add a card" })).toHaveAttribute("href", `/create?deck=${id}`);
+    expect(screen.getByRole("link", { name: "Add from a PGN" })).toHaveAttribute("href", `/create?deck=${id}&from=pgn`);
+  });
+
+  it("an empty deck says so and still offers to add a card", async () => {
+    const made = await createDeck("Blank");
+    if (!made.ok) throw new Error(made.error);
+    renderPage(`/decks?deck=${made.deck.id}`);
+    expect(await screen.findByRole("heading", { level: 1, name: "Blank" })).toBeInTheDocument();
+    expect(await screen.findByText(/Nothing in here yet/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Add a card" })).toBeInTheDocument();
   });
 
   it("goes back to the grid", async () => {
@@ -236,8 +281,9 @@ describe("Decks page: one deck", () => {
     await fromCardMenu("Edit");
     expect(screen.getByRole("heading", { level: 1, name: "Edit card" })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Question"), { target: { value: "Open the game." } });
+    await click("More options");
     fireEvent.change(screen.getByLabelText("Other accepted moves (optional)"), { target: { value: "d4, c4" } });
-    fireEvent.change(screen.getByLabelText("Explanation"), { target: { value: "Take space." } });
+    fireEvent.change(screen.getByLabelText("Explanation (optional)"), { target: { value: "Take space." } });
     fireEvent.change(screen.getByLabelText("Tags (optional)"), { target: { value: "kings pawn, basics" } });
     await click("Save changes");
     expect((await screen.findAllByText("Open the game.")).length).toBeGreaterThan(0);

@@ -14,6 +14,10 @@ type Props = {
   /** The position shown on the board, which the deck can start from. */
   currentId: string;
   decks: DeckSummary[];
+  /** The deck to pre-select. */
+  deckId?: string;
+  /** The deck is already decided, so don't ask for it. Pass `deckId` too. */
+  fixedDeck?: boolean;
   /** Saves the cards. Resolves to an error message, or null when it worked. */
   onBuild: (deck: DeckChoice, drafts: CardDraft[]) => Promise<string | null>;
   onCancel: () => void;
@@ -21,14 +25,14 @@ type Props = {
 
 const PREVIEW_LIMIT = 8;
 
-/** Turns the line on the board into a deck: a card for each of your moves, or one card for the whole line. */
-export function DeckBuilder({ tree, currentId, decks, onBuild, onCancel }: Props) {
+/** Turns the line on the board into cards: one for each of your moves, or one for the whole line. */
+export function DeckBuilder({ tree, currentId, decks, deckId, fixedDeck = false, onBuild, onCancel }: Props) {
   const [side, setSide] = useState<"w" | "b">(() => sideToMove(tree.startFen));
   const [shape, setShape] = useState<"moves" | "line">("moves");
   const [context, setContext] = useState<"rest" | "reply">("rest");
   const [start, setStart] = useState<"line" | "here">("line");
   const [category, setCategory] = useState<CardCategory>("opening");
-  const [deckChoice, setDeckChoice] = useState(decks[0]?.id ?? NEW_DECK);
+  const [deckChoice, setDeckChoice] = useState(deckId ?? decks[0]?.id ?? NEW_DECK);
   const [newDeckName, setNewDeckName] = useState("");
   const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -66,8 +70,7 @@ export function DeckBuilder({ tree, currentId, decks, onBuild, onCancel }: Props
   return (
     <form onSubmit={submit} noValidate className="space-y-7">
       <div>
-        <h2 className="font-display text-2xl font-bold">Make a deck from this line</h2>
-        <p className="mt-1 text-ink-soft">
+        <p className="text-ink-soft">
           Only the main line gets cards. Variations and comments aren't lost: they appear on the back of the cards they belong to.
         </p>
       </div>
@@ -136,16 +139,18 @@ export function DeckBuilder({ tree, currentId, decks, onBuild, onCancel }: Props
         </div>
       ) : null}
 
-      <DeckPicker
-        decks={decks}
-        value={deckChoice}
-        newName={newDeckName}
-        error={tried ? deckError : null}
-        onChange={(value, name) => {
-          setDeckChoice(value);
-          setNewDeckName(name);
-        }}
-      />
+      {fixedDeck ? null : (
+        <DeckPicker
+          decks={decks}
+          value={deckChoice}
+          newName={newDeckName}
+          error={tried ? deckError : null}
+          onChange={(value, name) => {
+            setDeckChoice(value);
+            setNewDeckName(name);
+          }}
+        />
+      )}
 
       <Field id="deck-category" label="Type of position">
         {(aria) => (
@@ -186,7 +191,7 @@ export function DeckBuilder({ tree, currentId, decks, onBuild, onCancel }: Props
 
       <div className="flex flex-wrap gap-3">
         <Button type="submit" size="lg" disabled={busy || !plan.ok}>
-          Make deck
+          Add cards
         </Button>
         <Button size="lg" variant="secondary" onClick={onCancel}>
           Cancel

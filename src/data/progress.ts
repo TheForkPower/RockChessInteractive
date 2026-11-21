@@ -183,6 +183,8 @@ export type GradeInput = {
   grade: Grade;
   suggested: Grade;
   nudged: boolean;
+  /** Who picked the grade. Leave out for manual. */
+  grading?: "manual" | "smart";
   outcome: Outcome;
   /** "learn" when the card is being introduced and the grade is worked out for the person. */
   phase?: "learn" | "review";
@@ -209,6 +211,7 @@ export async function recordReview(input: GradeInput): Promise<Schedule> {
       rating: RATING[input.grade],
       suggested: RATING[input.suggested],
       nudged: input.nudged,
+      grading: input.grading ?? "manual",
       outcome: input.outcome,
       phase: input.phase ?? "review",
       mistakes: input.tally.mistakes,
