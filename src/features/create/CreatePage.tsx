@@ -236,7 +236,7 @@ export function CreatePage() {
         <PageHeader title="Make cards from this line">
           {contextDeck ? `Saving to ${contextDeck.name}.` : null}
         </PageHeader>
-        <div className="mt-10 grid gap-10 lg:grid-cols-[minmax(0,30rem)_minmax(0,1fr)]">
+        <div className="mt-10 grid grid-cols-[minmax(0,1fr)] gap-10 lg:grid-cols-[minmax(0,30rem)_minmax(0,1fr)]">
           <div className="lg:sticky lg:top-6 lg:self-start">{board}</div>
           {decks === undefined ? (
             <p className="text-ink-soft">Loading your decks…</p>
@@ -320,7 +320,7 @@ export function CreatePage() {
 
       {savedNotice}
 
-      <div className="mt-10 grid gap-10 lg:grid-cols-[minmax(0,30rem)_minmax(0,1fr)]">
+      <div className="mt-10 grid grid-cols-[minmax(0,1fr)] gap-10 lg:grid-cols-[minmax(0,30rem)_minmax(0,1fr)]">
         <div className="lg:sticky lg:top-6 lg:self-start">{board}</div>
 
         <div className="space-y-10">

@@ -99,6 +99,16 @@ describe("the queue", () => {
     expect(await listDecks(schedule.due + 1000)).toMatchObject([{ dueCount: 1, newCount: 1 }]);
   });
 
+  it("keeps cards due at the same moment in the order they were made", async () => {
+    const { deckId, cards } = await deckWithCards("1. e4 e5 2. Nf3 Nc6 3. Bb5 a6");
+    expect(cards.length).toBeGreaterThan(2);
+    const ordered = [...cards].sort((a, b) => a.createdAt - b.createdAt || (a.sourcePly ?? 0) - (b.sourcePly ?? 0));
+    // Grade them in a scrambled order, all at the same time.
+    for (const card of [...ordered].reverse()) await recordReview(grade(card, { now: T0 }));
+    const queue = await getQueue(deckId, T0 + 60 * DAY);
+    expect(queue.due.map((card) => card.id)).toEqual(ordered.map((card) => card.id));
+  });
+
   it("puts the longest overdue card first", async () => {
     const { deckId, cards } = await deckWithCards();
     const a = await recordReview(grade(cards[0], { now: T0 }));
@@ -123,6 +133,20 @@ describe("recording a review", () => {
       before: { state: 0, due: null },
     });
     expect(entry.after.due).toBe((await db.schedules.get(cards[0].id))?.due);
+  });
+
+  it("takes back an earlier grade when it is replaced, and starts again from the schedule before it", async () => {
+    const { cards } = await deckWithCards();
+    const first = await recordReview(grade(cards[0], { now: T0 }));
+    const before = await db.schedules.get(cards[0].id);
+    await recordReview(grade(cards[0], { now: T0 + DAY, reviewId: "mine" }));
+    const replaced = await recordReview(
+      grade(cards[0], { now: T0 + DAY, grade: "again", replaces: { reviewId: "mine", schedule: before ?? null } }),
+    );
+    expect(await db.reviews.get("mine")).toBeUndefined();
+    expect(await db.reviews.where("cardId").equals(cards[0].id).count()).toBe(2);
+    expect(replaced.reps).toBe(first.reps + 1);
+    expect(replaced.lapses).toBe(first.lapses + 1);
   });
 
   it("keeps the rating the person pressed and the timing apart", async () => {

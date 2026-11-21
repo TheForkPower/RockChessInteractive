@@ -251,6 +251,32 @@ describe("adding to what is already here", () => {
     expect(await db.schedules.get(a.cards[0].id)).toEqual(mine);
   });
 
+  it("brings progress back onto a fresh copy of the starter deck, whatever the card ids", async () => {
+    const a = await deck("Famous moves");
+    await db.decks.update(a.id, { theme: "tutorial" });
+    await graded(a.cards[0], 5_000_000);
+    await graded(a.cards[1], 6_000_000);
+    const backup = roundTrip(await exportBackup()).backup;
+
+    // Clearing the browser's data and visiting again gives the same deck back with new ids and no progress.
+    await wipe();
+    const fresh = await deck("Famous moves");
+    await db.decks.update(fresh.id, { theme: "tutorial" });
+    expect(fresh.id).not.toBe(a.id);
+    const summary = await importBackup(backup, "merge");
+
+    expect(summary).toMatchObject({ decksAdded: 0, decksMerged: 1, cardsAdded: 0, cardsSkipped: 2 });
+    expect(summary.progressRestored).toBe(2);
+    expect(summary.reviewsAdded).toBe(2);
+    expect(await db.decks.count()).toBe(1);
+    expect(await db.cards.count()).toBe(2);
+    const schedules = await db.schedules.toArray();
+    expect(schedules.map((item) => item.cardId).sort()).toEqual(fresh.cards.map((card) => card.id).sort());
+    expect(schedules.every((item) => item.deckId === fresh.id)).toBe(true);
+    const reviews = await db.reviews.toArray();
+    expect(reviews.every((item) => item.deckId === fresh.id && fresh.cards.some((card) => card.id === item.cardId))).toBe(true);
+  });
+
   it("gives a card that is here but has no progress the progress from the file", async () => {
     const a = await deck("Open");
     const withProgress = await exportBackup();

@@ -27,6 +27,7 @@ function summaryLine(summary: ImportSummary): string {
   const parts = [`Added ${plural(summary.decksAdded, "deck")} and ${plural(summary.cardsAdded, "card")}`];
   if (summary.decksMerged > 0) parts.push(`${plural(summary.decksMerged, "deck")} were already here, so their cards went in there`);
   if (summary.cardsSkipped > 0) parts.push(`${plural(summary.cardsSkipped, "card")} were already here and were left as they are`);
+  if (summary.progressRestored > 0) parts.push(`${plural(summary.progressRestored, "card")} got their progress back`);
   return `${parts.join(". ")}.`;
 }
 

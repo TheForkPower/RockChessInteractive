@@ -280,12 +280,15 @@ export function ReviewCard({
           const node = tree.nodes[id];
           const before = tree.nodes[node.parentId as string].fen.split(" ");
           const prefix = before[1] === "w" ? `${before[5]}.` : index === 0 ? `${before[5]}...` : "";
+          // The space between moves sits outside the no-wrap span, so a long line can break between moves.
           return (
-            <span key={id} className="whitespace-nowrap">
-              {prefix ? <span className="text-ink-soft">{prefix} </span> : null}
-              <MoveButton selected={id === shownId} label={moveLabel(tree, id)} onClick={() => setShownId(id)}>
-                {node.san ?? ""}
-              </MoveButton>{" "}
+            <span key={id}>
+              <span className="whitespace-nowrap">
+                {prefix ? <span className="text-ink-soft">{prefix} </span> : null}
+                <MoveButton selected={id === shownId} label={moveLabel(tree, id)} onClick={() => setShownId(id)}>
+                  {node.san ?? ""}
+                </MoveButton>
+              </span>{" "}
             </span>
           );
         })}
@@ -294,7 +297,7 @@ export function ReviewCard({
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[auto_minmax(0,1fr)] lg:items-start lg:gap-8">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[auto_minmax(0,1fr)] lg:items-start lg:gap-8">
       <div className="w-[clamp(18rem,calc(100svh_-_10.5rem),34rem)] max-w-full">
         {phase === "play" ? (
           <Board

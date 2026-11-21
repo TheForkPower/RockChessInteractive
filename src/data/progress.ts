@@ -88,7 +88,13 @@ export async function getQueue(deckId: string | null, now = Date.now()): Promise
   const byId = new Map(cards.map((card) => [card.id, card]));
   const schedules = await db.schedules.where("deckId").anyOf(scope).toArray();
   const scheduled = new Set(schedules.map((item) => item.cardId));
-  const dueSchedules = schedules.filter((item) => item.due <= now && byId.has(item.cardId)).sort((a, b) => a.due - b.due);
+  // Longest overdue first. Cards due at the same moment keep the order they were made in, so a line comes back move by move.
+  const madeFirst = (a: Schedule, b: Schedule) => {
+    const x = byId.get(a.cardId) as Card;
+    const y = byId.get(b.cardId) as Card;
+    return x.createdAt - y.createdAt || (x.sourcePly ?? 0) - (y.sourcePly ?? 0);
+  };
+  const dueSchedules = schedules.filter((item) => item.due <= now && byId.has(item.cardId)).sort((a, b) => a.due - b.due || madeFirst(a, b));
   const later = schedules.filter((item) => item.due > now && byId.has(item.cardId)).map((item) => item.due);
 
   const deckOrder = new Map(decks.map((deck) => [deck.id, deck.createdAt]));
@@ -193,18 +199,26 @@ export type GradeInput = {
   timing: Timing;
   desiredRetention: number;
   now?: number;
+  /** Use this id for the history line, so it can be found again. */
+  reviewId?: string;
+  /** Take back an earlier grade first: delete its history line and start again from the schedule the card had before it. */
+  replaces?: { reviewId: string; schedule: Schedule | null };
 };
 
 /** Saves a grade: the card's new schedule and a line in its history, together. */
 export async function recordReview(input: GradeInput): Promise<Schedule> {
   const now = input.now ?? Date.now();
   return db.transaction("rw", db.schedules, db.reviews, async () => {
-    const current = (await db.schedules.get(input.card.id)) ?? null;
+    let current = (await db.schedules.get(input.card.id)) ?? null;
+    if (input.replaces) {
+      await db.reviews.delete(input.replaces.reviewId);
+      current = input.replaces.schedule;
+    }
     const applied = applyGrade(current, input.grade, now, input.desiredRetention);
     const schedule: Schedule = { cardId: input.card.id, deckId: input.card.deckId, ...applied.memory };
     await db.schedules.put(schedule);
     await db.reviews.add({
-      id: newId(),
+      id: input.reviewId ?? newId(),
       cardId: input.card.id,
       deckId: input.card.deckId,
       reviewedAt: now,

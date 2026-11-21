@@ -1,5 +1,6 @@
 import { useEffect, type ComponentType, type SVGProps } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router";
+import { preloadPages } from "./pages";
 import { installDifficultDeckOnce } from "../data/difficult";
 import { installTutorialDeckOnce } from "../data/seed";
 import { CreateIcon, DecksIcon, HomeIcon, SettingsIcon, ToolsIcon } from "../ui/Icons";
@@ -20,6 +21,19 @@ const items: NavItem[] = [
   { to: "/settings", label: "Settings", Icon: SettingsIcon },
 ];
 
+const TITLES: Record<string, string> = {
+  "/recall": "Recall",
+  "/decks": "Decks",
+  "/review": "Review",
+  "/create": "Create cards",
+  "/settings": "Settings",
+};
+
+function titleFor(pathname: string): string {
+  const name = TITLES[pathname];
+  return name ? `${name} | RockChess` : "RockChess";
+}
+
 /**
  * One navigation landmark, laid out two ways: inline in the top bar on wide
  * screens, and as a fixed tab bar along the bottom on phones.
@@ -36,6 +50,20 @@ export function Shell() {
       .then(() => installDifficultDeckOnce())
       .catch(() => {});
   }, []);
+
+  // Fetch the other pages once the browser has nothing better to do.
+  useEffect(() => {
+    const idle = window.requestIdleCallback ?? ((run: () => void) => window.setTimeout(run, 1500));
+    const cancel = window.cancelIdleCallback ?? window.clearTimeout;
+    const handle = idle(preloadPages);
+    return () => cancel(handle);
+  }, []);
+
+  // Each page names itself in the tab, and a new page starts at the top.
+  useEffect(() => {
+    document.title = titleFor(pathname);
+    window.scrollTo?.(0, 0);
+  }, [pathname]);
 
   return (
     <div className="flex min-h-dvh flex-col">
@@ -64,7 +92,7 @@ export function Shell() {
                     end={end}
                     className={({ isActive }) =>
                       [
-                        "flex flex-col items-center gap-0.5 rounded-xl px-3 py-2 text-xs font-semibold transition-colors md:flex-row md:px-4 md:text-base",
+                        "flex flex-col items-center gap-0.5 rounded-xl px-1 py-2 text-xs font-semibold min-[360px]:px-3 transition-colors md:flex-row md:px-4 md:text-base",
                         isActive ? "bg-brand-wash text-brand" : "text-ink-soft hover:bg-line/60 hover:text-ink",
                       ].join(" ")
                     }
@@ -86,7 +114,7 @@ export function Shell() {
                   placement="up-on-small"
                   items={[{ label: "Recall", to: "/recall" }]}
                   textClass={[
-                    "flex w-full flex-col items-center gap-0.5 rounded-xl px-3 py-2 text-xs font-semibold transition-colors md:w-auto md:flex-row md:px-4 md:text-base",
+                    "flex w-full flex-col items-center gap-0.5 rounded-xl px-1 py-2 text-xs font-semibold min-[360px]:px-3 transition-colors md:w-auto md:flex-row md:px-4 md:text-base",
                     inTools ? "bg-brand-wash text-brand" : "text-ink-soft hover:bg-line/60 hover:text-ink",
                   ].join(" ")}
                 />

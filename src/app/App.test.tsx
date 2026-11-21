@@ -37,6 +37,17 @@ describe("App shell", () => {
     expect(screen.getByRole("link", { name: /start learning & review/i })).toHaveAttribute("href", "/review?all=1");
   });
 
+  it("explains what Recall does, with a screenshot and links to make cards and open decks", () => {
+    renderAt("/recall");
+    const section = within(screen.getByRole("region", { name: "What you can do here" }));
+    expect(section.getByRole("img", { name: /The Learn screen/ })).toHaveAttribute("width", "1600");
+    for (const title of ["Make cards from your own material", "Learn a new card by playing it", "Review it when it's due", "Drill the hard ones", "Keep your data"]) {
+      expect(section.getByText(title)).toBeInTheDocument();
+    }
+    expect(section.getByRole("link", { name: "Make cards" })).toHaveAttribute("href", "/create");
+    expect(section.getByRole("link", { name: "Open your decks" })).toHaveAttribute("href", "/decks");
+  });
+
   it("has a Tools menu in the header with Recall as its only option", async () => {
     renderAt("/");
     const nav = within(screen.getByRole("navigation", { name: "Main" }));
@@ -67,9 +78,9 @@ describe("App shell", () => {
     expect(nav.getByRole("link", { name: "Decks" })).toHaveAttribute("aria-current", "page");
   });
 
-  it("renders the design system page and a not-found page", () => {
+  it("renders the design system page and a not-found page", async () => {
     const { unmount } = renderAt("/design");
-    expect(screen.getByRole("heading", { level: 1, name: "Design system" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Design system" })).toBeInTheDocument();
     const grades = within(screen.getByRole("group", { name: "Grade buttons" }));
     for (const name of ["Again", "Hard", "Good", "Easy"]) {
       expect(grades.getByRole("button", { name: new RegExp(`^${name}`) })).toBeInTheDocument();
@@ -78,5 +89,23 @@ describe("App shell", () => {
     renderAt("/nope");
     expect(screen.getByRole("heading", { level: 1, name: "Illegal move!" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Back to the start" })).toHaveAttribute("href", "/");
+  });
+
+  it("names each page in the browser tab", async () => {
+    const { unmount } = renderAt("/decks");
+    expect(document.title).toBe("Decks | RockChess");
+    unmount();
+    renderAt("/settings");
+    await screen.findByRole("heading", { level: 1, name: "Settings" });
+    expect(document.title).toBe("Settings | RockChess");
+  });
+
+  it("goes back to the top when the page changes", async () => {
+    const scroll = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    renderAt("/");
+    await userEvent.click(within(screen.getByRole("navigation", { name: "Main" })).getByRole("link", { name: "Decks" }));
+    expect(scroll).toHaveBeenLastCalledWith(0, 0);
+    expect(scroll.mock.calls.length).toBeGreaterThanOrEqual(2);
+    scroll.mockRestore();
   });
 });

@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Link, Navigate, useSearchParams } from "react-router";
 import { markDifficult, recordStruggle } from "../../data/difficult";
 import { getQueue, getSettings, recentMoveTimes, recordReview } from "../../data/progress";
+import { newId } from "../../data/repo";
 import { getDeck, listCards, STORAGE_ERROR } from "../../data/repo";
 import type { Deck } from "../../data/db";
 import type { Card } from "../../domain/cards";
@@ -102,6 +103,8 @@ function Session({ items, scheduled, schedules, decks, settings, history, accent
   /** How many times each new card was played and not learned. */
   const [failures, setFailures] = useState<Record<string, number>>({});
   const [grades, setGrades] = useState<Record<string, Grade>>({});
+  /** Smart grading saves the grade it picked straight away. This remembers which line that was, in case the grade is changed. */
+  const [autoSaved, setAutoSaved] = useState<Record<string, { reviewId: string; grade: Grade }>>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [ended, setEnded] = useState(false);
@@ -136,8 +139,19 @@ function Session({ items, scheduled, schedules, decks, settings, history, accent
 
     const go: Go = { outcome, tally, timing, playerMoves, suggestion, summary, intervals, learnGrade, learnNote };
     setGoes((previous) => ({ ...previous, [entry.card.id]: go }));
+    // A new card that was played right is saved at once. The grade is worked out for you, so there is nothing to
+    // wait for, and closing the tab after "Learned" must not lose it.
+    if (scheduled && entry.kind === "learn" && outcome === "first-try") {
+      void save({ grade: learnGrade, suggested: learnGrade, nudged: false, phase: "learn", go }, false);
+    }
     // The first go at a card is the one that counts. Trying it again doesn't change it.
     if (results[entry.card.id]) return;
+    // Smart grading saves its grade at once, so "Graded Good" is never only on the screen. Changing the grade replaces it.
+    if (scheduled && entry.kind === "review" && smart) {
+      const reviewId = newId();
+      void save({ grade: suggestion.grade, suggested: suggestion.grade, nudged: suggestion.nudged, phase: "review", go, reviewId }, false);
+      setAutoSaved((previous) => ({ ...previous, [entry.card.id]: { reviewId, grade: suggestion.grade } }));
+    }
     setResults((previous) => (previous[entry.card.id] ? previous : { ...previous, [entry.card.id]: go }));
     // Trouble on the first go puts the card in the Difficult moves deck. New cards are left out: stumbling on
     // something you have only just met isn't a sign it is hard. Failing to save mustn't interrupt the session.
@@ -152,7 +166,10 @@ function Session({ items, scheduled, schedules, decks, settings, history, accent
     }
   }
 
-  async function save(input: { grade: Grade; suggested: Grade; nudged: boolean; phase: "learn" | "review"; go: Go }) {
+  async function save(
+    input: { grade: Grade; suggested: Grade; nudged: boolean; phase: "learn" | "review"; go: Go; reviewId?: string; replaces?: string },
+    andAdvance = true,
+  ) {
     setSaving(true);
     setSaveError(null);
     try {
@@ -168,9 +185,11 @@ function Session({ items, scheduled, schedules, decks, settings, history, accent
         playerMoves: input.go.playerMoves,
         timing: input.go.timing,
         desiredRetention: settings.desiredRetention,
+        reviewId: input.reviewId,
+        replaces: input.replaces ? { reviewId: input.replaces, schedule: schedules[card.id] ?? null } : undefined,
       });
       setGrades((previous) => ({ ...previous, [card.id]: input.grade }));
-      advance(queue);
+      if (andAdvance) advance(queue);
     } catch {
       setSaveError(`That didn't save. ${STORAGE_ERROR}`);
     } finally {
@@ -181,6 +200,18 @@ function Session({ items, scheduled, schedules, decks, settings, history, accent
   async function grade(chosen: Grade) {
     const first = results[card.id];
     if (!first || saving) return;
+    const kept = autoSaved[card.id];
+    if (kept && grades[card.id]) {
+      // Smart grading already saved a grade. The same one just moves on; another one replaces it.
+      if (chosen === kept.grade) {
+        advance(queue);
+        return;
+      }
+      await save({ grade: chosen, suggested: first.suggestion.grade, nudged: first.suggestion.nudged, phase: "review", go: first, replaces: kept.reviewId }, false);
+      setAutoSaved((previous) => ({ ...previous, [card.id]: { reviewId: kept.reviewId, grade: chosen } }));
+      advance(queue);
+      return;
+    }
     await save({ grade: chosen, suggested: first.suggestion.grade, nudged: first.suggestion.nudged, phase: "review", go: first });
   }
 
@@ -189,6 +220,11 @@ function Session({ items, scheduled, schedules, decks, settings, history, accent
     const go = goes[card.id];
     if (!go || saving) return;
     if (go.outcome === "first-try") {
+      // Already saved when it was played. If that save failed, this tries again.
+      if (grades[card.id]) {
+        advance(queue);
+        return;
+      }
       await save({ grade: go.learnGrade, suggested: go.learnGrade, nudged: false, phase: "learn", go });
       return;
     }
@@ -272,7 +308,7 @@ function Session({ items, scheduled, schedules, decks, settings, history, accent
   const go = goes[card.id];
   const first = results[card.id];
   const grading =
-    scheduled && !learning && first && !grades[card.id]
+    scheduled && !learning && first && (!grades[card.id] || autoSaved[card.id])
       ? {
           suggestion: first.suggestion,
           summary: first.summary,
@@ -288,7 +324,7 @@ function Session({ items, scheduled, schedules, decks, settings, history, accent
 
   return (
     <div>
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
         {heading}
         <div className="flex shrink-0 items-center gap-3">
           <p className="font-semibold text-ink-soft" aria-live="polite">
@@ -449,7 +485,7 @@ export function ReviewPage({ replyDelay = REPLY_DELAY_MS, clock }: Props) {
   const playing = loaded.status === "ready" && loaded.items.length > 0;
 
   const heading = (
-    <div className="flex min-w-0 items-center gap-2">
+    <div className="flex min-w-0 items-center gap-2 max-sm:basis-full">
       <Link
         to="/decks"
         aria-label="All decks"

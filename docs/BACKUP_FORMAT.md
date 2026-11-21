@@ -71,7 +71,9 @@ Nothing is changed until the whole file has been read, and the person sees what 
 
 - **Add to what I have** only adds. A deck that is already here (same id, or the starter or Difficult moves deck) takes
   the file's cards. A deck whose name is taken by a different deck arrives as "Name (imported)". A card already here,
-  by id or by position and answer, is left alone with its own progress. Settings already here are kept.
+  by id or by position and answer, is left alone with its own progress; if it has none yet, it takes the file's progress
+  and history (this is what brings progress back onto a freshly installed starter deck after the browser's data was cleared).
+  Settings already here are kept.
 - **Replace everything** empties the browser and puts the file in its place. It only works for a file with
   `scope` `"all"`, and the person is warned and offered a backup of what they have first.
 

@@ -325,6 +325,8 @@ export type ImportSummary = {
   cardsAdded: number;
   /** Cards that were already here, by id or by position and answer. */
   cardsSkipped: number;
+  /** Cards that got their progress from the file. */
+  progressRestored: number;
   reviewsAdded: number;
 };
 
@@ -341,7 +343,7 @@ const ALL_TABLES = [db.decks, db.cards, db.sources, db.schedules, db.reviews, db
  */
 export async function importBackup(backup: Backup, mode: ImportMode): Promise<ImportSummary> {
   const { data } = backup;
-  const summary: ImportSummary = { mode, decksAdded: 0, decksMerged: 0, cardsAdded: 0, cardsSkipped: 0, reviewsAdded: 0 };
+  const summary: ImportSummary = { mode, decksAdded: 0, decksMerged: 0, cardsAdded: 0, cardsSkipped: 0, progressRestored: 0, reviewsAdded: 0 };
 
   if (mode === "replace") {
     if (backup.scope !== "all") throw new Error("Only a backup of everything can replace everything.");
@@ -354,7 +356,7 @@ export async function importBackup(backup: Backup, mode: ImportMode): Promise<Im
       await db.reviews.bulkAdd(data.reviews);
       await db.meta.bulkAdd(data.meta);
     });
-    return { ...summary, decksAdded: data.decks.length, cardsAdded: data.cards.length, reviewsAdded: data.reviews.length };
+    return { ...summary, decksAdded: data.decks.length, cardsAdded: data.cards.length, progressRestored: data.schedules.length, reviewsAdded: data.reviews.length };
   }
 
   await db.transaction("rw", ALL_TABLES, async () => {
@@ -364,7 +366,7 @@ export async function importBackup(backup: Backup, mode: ImportMode): Promise<Im
     const takenNames = new Set(localDecks.map((deck) => deck.name.toLowerCase()));
     const byDeck = new Map<string, Card[]>();
     for (const card of localCards) byDeck.set(card.deckId, [...(byDeck.get(card.deckId) ?? []), card]);
-    const localIds = new Set(localCards.map((card) => card.id));
+    const localById = new Map(localCards.map((card) => [card.id, card]));
 
     // Which deck here each deck in the backup goes into.
     const target = new Map<string, string>();
@@ -387,25 +389,22 @@ export async function importBackup(backup: Backup, mode: ImportMode): Promise<Im
     }
     if (newDecks.length > 0) await db.decks.bulkAdd(newDecks);
 
-    // Which cards are new here, and which already are.
+    // Which cards are new here, and which already are. `here` maps each card in the file to the card it is here.
     const newCards: Card[] = [];
-    const wanted = new Set<string>();
+    const here = new Map<string, Card>();
     for (const card of data.cards) {
       const deckId = target.get(card.deckId) as string;
       const there = byDeck.get(deckId) ?? [];
-      if (localIds.has(card.id)) {
+      const same = localById.get(card.id) ?? there.find((other) => sameCard(other, card));
+      if (same) {
         summary.cardsSkipped += 1;
-        wanted.add(card.id);
-        continue;
-      }
-      if (there.some((other) => sameCard(other, card))) {
-        summary.cardsSkipped += 1;
+        here.set(card.id, same);
         continue;
       }
       const added = { ...card, deckId };
       newCards.push(added);
       byDeck.set(deckId, [...there, added]);
-      wanted.add(card.id);
+      here.set(card.id, added);
       summary.cardsAdded += 1;
     }
     if (newCards.length > 0) await db.cards.bulkAdd(newCards);
@@ -416,16 +415,32 @@ export async function importBackup(backup: Backup, mode: ImportMode): Promise<Im
     const sources = data.sources.filter((item) => sourceIds.has(item.id) && !localSources.has(item.id));
     if (sources.length > 0) await db.sources.bulkAdd(sources);
 
-    // Progress comes with new cards. A card already here keeps its own, and only gets the backup's if it has none.
-    const cardDeck = new Map(data.cards.map((card) => [card.id, target.get(card.deckId) as string]));
+    // Progress comes with new cards. A card already here keeps its own, and only gets the file's if it has none.
+    // That includes a card that is the same position and answer under a different id, which is what a fresh install
+    // of the starter deck looks like after the browser's data was cleared.
     const hasProgress = new Set(await db.schedules.toCollection().primaryKeys());
-    const schedules = data.schedules.filter((item) => wanted.has(item.cardId) && (newIds.has(item.cardId) || !hasProgress.has(item.cardId)));
-    if (schedules.length > 0) await db.schedules.bulkAdd(schedules.map((item) => ({ ...item, deckId: cardDeck.get(item.cardId) as string })));
-    const progressed = new Set(schedules.map((item) => item.cardId));
+    const adopted = new Map<string, string>(); // card id in the file -> card id here
+    const taken = new Set<string>();
+    const schedules: Schedule[] = [];
+    for (const item of data.schedules) {
+      const local = here.get(item.cardId);
+      if (!local || taken.has(local.id)) continue;
+      if (!newIds.has(local.id) && hasProgress.has(local.id)) continue;
+      taken.add(local.id);
+      adopted.set(item.cardId, local.id);
+      schedules.push({ ...item, cardId: local.id, deckId: local.deckId });
+    }
+    if (schedules.length > 0) await db.schedules.bulkAdd(schedules);
     const localReviews = new Set(await db.reviews.toCollection().primaryKeys());
-    const reviews = data.reviews.filter((item) => progressed.has(item.cardId) && !localReviews.has(item.id));
-    if (reviews.length > 0) await db.reviews.bulkAdd(reviews.map((item) => ({ ...item, deckId: cardDeck.get(item.cardId) as string })));
+    const reviews = data.reviews
+      .filter((item) => adopted.has(item.cardId) && !localReviews.has(item.id))
+      .map((item) => {
+        const local = here.get(item.cardId) as Card;
+        return { ...item, cardId: local.id, deckId: local.deckId };
+      });
+    if (reviews.length > 0) await db.reviews.bulkAdd(reviews);
     summary.reviewsAdded = reviews.length;
+    summary.progressRestored = schedules.length;
 
     const localMeta = new Set(await db.meta.toCollection().primaryKeys());
     const meta = data.meta.filter((item) => !localMeta.has(item.key));

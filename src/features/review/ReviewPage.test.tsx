@@ -783,6 +783,39 @@ describe("Review: smart grading", () => {
     expect(await lastReview()).toMatchObject({ rating: 4, suggested: 3, grading: "smart" });
   });
 
+  it("saves the grade as soon as it is shown, before you move on", async () => {
+    await saveSettings({ grading: "smart" });
+    const id = await dueDeck();
+    const [card] = await listCards(id);
+    const before = await db.schedules.get(card.id);
+    const earlier = await db.reviews.count();
+    renderReview(`?deck=${id}`, { scheduled: true });
+    await screen.findByText("Card 1 of 1");
+    await play(E4);
+    await screen.findByText(/Graded Good\./);
+    await waitFor(async () => expect((await db.schedules.get(card.id))?.reps).toBe((before?.reps ?? 0) + 1));
+    expect(await db.reviews.count()).toBe(earlier + 1);
+  });
+
+  it("replaces the saved grade, not adds to it, when you change it", async () => {
+    await saveSettings({ grading: "smart" });
+    const id = await dueDeck();
+    const [card] = await listCards(id);
+    const before = await db.schedules.get(card.id);
+    const earlier = await db.reviews.count();
+    renderReview(`?deck=${id}`, { scheduled: true });
+    await screen.findByText("Card 1 of 1");
+    await play(E4);
+    await click("Change grade");
+    await userEvent.click(await gradeButton("Again"));
+    await finished("You went through 1 card");
+    expect(await db.reviews.count()).toBe(earlier + 1);
+    expect(await lastReview()).toMatchObject({ rating: 1, suggested: 3 });
+    const after = await db.schedules.get(card.id);
+    expect(after?.reps).toBe((before?.reps ?? 0) + 1);
+    expect(after?.lapses).toBe((before?.lapses ?? 0) + 1);
+  });
+
   it("grades a card Hard when it took a hint or one wrong try, and Again after two", async () => {
     await saveSettings({ grading: "smart" });
     const id = await dueDeck();
@@ -862,7 +895,8 @@ describe("Learn: new cards", () => {
     expect(await screen.findByText(/Learned\. It comes back in \d+ days?\./)).toBeInTheDocument();
     expect(screen.queryByRole("group", { name: "How did it go?" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Try this card again" })).not.toBeInTheDocument();
-    expect(await db.schedules.count()).toBe(0); // saved when you move on
+    // Saved as soon as it is played right, not when you move on.
+    await waitFor(async () => expect(await db.schedules.count()).toBe(1));
 
     await click("See results");
     expect(await finished("You went through 1 card")).toBeInTheDocument();

@@ -78,6 +78,11 @@ export function Board({ fen, orientation = "w", interactive = "turn", onMove, la
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // The picture of the board needs a name of its own for screen readers.
+  useEffect(() => {
+    containerRef.current?.querySelector("svg.cm-chessboard")?.setAttribute("aria-label", label);
+  }, [label]);
+
   useEffect(() => {
     void boardRef.current?.setPosition(fen, true);
   }, [fen]);
