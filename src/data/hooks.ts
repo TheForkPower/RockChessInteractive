@@ -4,7 +4,7 @@ import { DEFAULT_SETTINGS, type Settings } from "../domain/settings";
 import type { Schedule } from "../domain/scheduling";
 import type { ReviewEntry } from "./db";
 import { getOverview, getSettings, listReviews, listSchedules, type Overview } from "./progress";
-import { listCards, listDecks, type DeckSummary } from "./repo";
+import { listAllCards, listCards, listDecks, type DeckSummary } from "./repo";
 
 /**
  * Live views of saved data. Each returns undefined while loading and null if
@@ -53,6 +53,17 @@ export function useOverview(): Overview | null | undefined {
   return useLiveQuery(async () => {
     try {
       return await getOverview();
+    } catch {
+      return null;
+    }
+  }, []);
+}
+
+/** Every card with its deck's name, for searching across decks. */
+export function useAllCards() {
+  return useLiveQuery(async () => {
+    try {
+      return await listAllCards();
     } catch {
       return null;
     }

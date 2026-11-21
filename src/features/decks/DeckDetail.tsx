@@ -1,11 +1,14 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router";
+import { backupFileName, exportBackup } from "../../data/backup";
 import { markDifficult } from "../../data/difficult";
-import { deleteCard, deleteDeck, renameDeck, setDeckColor, STORAGE_ERROR, updateCard, type DeckSummary } from "../../data/repo";
+import { downloadText } from "../../data/download";
+import { deleteCard, deleteDeck, moveCard, renameDeck, setDeckColor, STORAGE_ERROR, updateCard, type DeckSummary } from "../../data/repo";
 import { useCards, useDecks, useSchedules } from "../../data/hooks";
 import { answerText, CATEGORIES, cardToDraft, type Card, type CardDraft } from "../../domain/cards";
 import { colorOf, gradientOf } from "../../domain/deckColors";
-import { dueLabel } from "../../domain/scheduling";
+import { cardStatus, dueLabel } from "../../domain/scheduling";
+import { hasTag, matchesQuery, tagsOf } from "../../domain/search";
 import { Button, ButtonLink } from "../../ui/Button";
 import { Feedback } from "../../ui/Feedback";
 import { fieldClass } from "../../ui/Field";
@@ -15,6 +18,7 @@ import { CardEditor, type DeckChoice } from "../cards/CardEditor";
 import { CardPreview } from "../cards/CardPreview";
 import { CardProgress } from "./CardProgress";
 import { ColorPicker } from "./ColorPicker";
+import { DeckStats, type StatusFilter } from "./DeckStats";
 import { Checker, PlayLinks } from "./DeckTile";
 import { progressLine } from "./progressLine";
 
@@ -33,17 +37,25 @@ type Props = {
   onSettled: () => void;
   /** Called after the deck is deleted. */
   onGone: () => void;
+  /** A card to open straight away, when the person came from a search result. */
+  openCard?: string | null;
 };
 
 /** One deck: its banner, its colour and name, and every card in it. */
-export function DeckDetail({ deck, action, onSettled, onGone }: Props) {
+export function DeckDetail({ deck, action, onSettled, onGone, openCard = null }: Props) {
   const decks = useDecks();
   const cards = useCards(deck.id);
   const schedules = useSchedules(deck.id);
   const [now] = useState(() => Date.now());
   const color = colorOf(deck);
 
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(openCard);
+  const [query, setQuery] = useState("");
+  const [tag, setTag] = useState<string | null>(null);
+  const [status, setStatus] = useState<StatusFilter | null>(null);
+  const [moving, setMoving] = useState<string | null>(null);
+  const [moveTo, setMoveTo] = useState("");
+  const [moveError, setMoveError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Card | null>(null);
   const [confirmCard, setConfirmCard] = useState<string | null>(null);
   const [panel, setPanel] = useState<DeckAction>(action);
@@ -51,6 +63,14 @@ export function DeckDetail({ deck, action, onSettled, onGone }: Props) {
   const [renameError, setRenameError] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [marks, setMarks] = useState<Record<string, string>>({});
+
+  // Coming from a search result, bring the card into view once the list has loaded.
+  const scrolled = useRef(false);
+  useEffect(() => {
+    if (!openCard || !cards || scrolled.current) return;
+    scrolled.current = true;
+    document.getElementById(`card-${openCard}`)?.scrollIntoView?.({ block: "center" });
+  }, [openCard, cards]);
 
   async function guard(task: () => Promise<void>) {
     setProblem(null);
@@ -68,6 +88,33 @@ export function DeckDetail({ deck, action, onSettled, onGone }: Props) {
         ...previous,
         [card.id]: result === "already" ? "Already in Difficult moves." : "Added to Difficult moves.",
       }));
+    });
+  }
+
+  async function exportDeck() {
+    await guard(async () => {
+      const backup = await exportBackup(deck.id);
+      downloadText(backupFileName(backup), JSON.stringify(backup));
+    });
+  }
+
+  function startMove(card: Card) {
+    setMoving(card.id);
+    setMoveError(null);
+    setMoveTo(decks?.find((item) => item.theme !== "difficult" && item.id !== deck.id)?.id ?? "");
+  }
+
+  async function submitMove(card: Card) {
+    if (!moveTo) return setMoveError("Pick a deck to move it to.");
+    await guard(async () => {
+      const result = await moveCard(card.id, moveTo);
+      if (result.ok) {
+        setMoving(null);
+        setMoveError(null);
+        if (openId === card.id) setOpenId(null);
+      } else {
+        setMoveError(result.error);
+      }
     });
   }
 
@@ -115,6 +162,16 @@ export function DeckDetail({ deck, action, onSettled, onGone }: Props) {
   }
 
   const count = deck.cardCount === 1 ? "1 card" : `${deck.cardCount} cards`;
+  const otherDecks = (decks ?? []).filter((item) => item.theme !== "difficult" && item.id !== deck.id);
+  const filtering = query.trim() !== "" || tag !== null || status !== null;
+  const shownCards = (cards ?? []).filter((card) => {
+    if (!matchesQuery(card, query)) return false;
+    if (tag && !hasTag(card, tag)) return false;
+    if (!status) return true;
+    const schedule = schedules?.[card.id];
+    return status === "due" ? Boolean(schedule && schedule.due <= now) : cardStatus(schedule) === status;
+  });
+  const tags = tagsOf(cards ?? []);
   const note = `deck-empty-${deck.id}`;
 
   return (
@@ -164,6 +221,9 @@ export function DeckDetail({ deck, action, onSettled, onGone }: Props) {
         </Button>
         <Button variant="secondary" aria-expanded={panel === "colour"} onClick={() => toggle("colour")}>
           Change colour
+        </Button>
+        <Button variant="secondary" onClick={() => void exportDeck()}>
+          Export deck
         </Button>
         <Button variant="secondary" aria-expanded={panel === "delete"} onClick={() => toggle("delete")}>
           Delete deck
@@ -249,6 +309,47 @@ export function DeckDetail({ deck, action, onSettled, onGone }: Props) {
         </div>
       ) : null}
 
+      {cards && cards.length > 0 ? (
+        <div className="mt-8 space-y-5">
+          <DeckStats deck={deck} active={status} onChange={setStatus} />
+          <div className="max-w-xl">
+            <label htmlFor="deck-search" className="block font-display text-lg font-bold">
+              Search this deck
+            </label>
+            <input
+              id="deck-search"
+              type="search"
+              className={`${fieldClass} mt-2`}
+              value={query}
+              placeholder="A move, a word, a tag"
+              autoComplete="off"
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </div>
+          {tags.length > 0 ? (
+            <div role="group" aria-label="Tags" className="flex flex-wrap gap-2">
+              {tags.map((item) => {
+                const on = tag !== null && tag.toLowerCase() === item.toLowerCase();
+                return (
+                  <button
+                    key={item}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => setTag(on ? null : item)}
+                    className={[
+                      "rounded-full border-2 px-3 py-1 text-sm font-semibold transition-colors",
+                      on ? "border-brand bg-brand-wash text-brand" : "border-line-strong bg-surface text-ink hover:bg-line/40",
+                    ].join(" ")}
+                  >
+                    {item}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       {cards === null ? (
         <div className="mt-8">
           <Feedback tone="bad" title="Can't read the cards">
@@ -268,17 +369,34 @@ export function DeckDetail({ deck, action, onSettled, onGone }: Props) {
             Nothing in here yet. Add a card to make the first one, or build cards from a PGN.
           </p>
         )
+      ) : shownCards.length === 0 ? (
+        <p className="mt-8 text-ink-soft">
+          No cards match.{" "}
+          {filtering ? (
+            <button
+              type="button"
+              className="font-semibold underline underline-offset-4"
+              onClick={() => {
+                setQuery("");
+                setTag(null);
+                setStatus(null);
+              }}
+            >
+              Clear the search
+            </button>
+          ) : null}
+        </p>
       ) : (
         <ul
           className="mt-8 space-y-4 rounded-3xl border-2 p-4 sm:p-5"
           style={{ background: color.wash, borderColor: color.line }}
           aria-label={`Cards in ${deck.name}`}
         >
-          {cards.map((card) => {
+          {shownCards.map((card) => {
             const open = openId === card.id;
             const category = CATEGORIES.find((option) => option.value === card.category)?.label;
             return (
-              <li key={card.id} className="panel p-5">
+              <li key={card.id} id={`card-${card.id}`} className="panel p-5">
                 <div className="grid min-h-[7.5rem] grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4">
                   <div className="min-w-0">
                     <p className="line-clamp-2 font-display text-lg font-bold">{card.prompt}</p>
@@ -309,7 +427,10 @@ export function DeckDetail({ deck, action, onSettled, onGone }: Props) {
                         { label: "Edit", onSelect: () => setEditing(card) },
                         ...(deck.theme === "difficult"
                           ? []
-                          : [{ label: "Mark as difficult", onSelect: () => void addToDifficult(card) }]),
+                          : [
+                              { label: "Move to another deck", onSelect: () => startMove(card) },
+                              { label: "Mark as difficult", onSelect: () => void addToDifficult(card) },
+                            ]),
                         { label: "Delete", danger: true, onSelect: () => setConfirmCard(card.id) },
                       ]}
                     />
@@ -338,6 +459,51 @@ export function DeckDetail({ deck, action, onSettled, onGone }: Props) {
                         </Button>
                       </div>
                     </Feedback>
+                  </div>
+                ) : null}
+
+                {moving === card.id ? (
+                  <div className="mt-4 rounded-2xl bg-brand-wash p-4">
+                    {otherDecks.length === 0 ? (
+                      <>
+                        <p className="font-semibold">There is no other deck to move it to. Make one on the Decks page first.</p>
+                        <div className="mt-3">
+                          <Button variant="secondary" onClick={() => setMoving(null)}>
+                            Close
+                          </Button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <label htmlFor={`move-${card.id}`} className="block font-display text-lg font-bold">
+                          Move to
+                        </label>
+                        <select
+                          id={`move-${card.id}`}
+                          className={`${fieldClass} mt-2 max-w-sm`}
+                          value={moveTo}
+                          onChange={(event) => setMoveTo(event.target.value)}
+                        >
+                          {otherDecks.map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {item.name} ({item.cardCount})
+                            </option>
+                          ))}
+                        </select>
+                        <p className="mt-2 text-sm text-ink-soft">Its progress goes with it.</p>
+                        {moveError ? (
+                          <p role="alert" className="mt-2 font-semibold text-bad-edge">
+                            {moveError}
+                          </p>
+                        ) : null}
+                        <div className="mt-3 flex gap-3">
+                          <Button onClick={() => void submitMove(card)}>Move card</Button>
+                          <Button variant="secondary" onClick={() => setMoving(null)}>
+                            Cancel
+                          </Button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 ) : null}
 

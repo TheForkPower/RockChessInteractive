@@ -1,6 +1,8 @@
 import type { Card, CardDraft } from "../domain/cards";
 import { findColor, nextColor } from "../domain/deckColors";
+import { cardStatus } from "../domain/scheduling";
 import { db, type Deck, type Source } from "./db";
+import { protectOnce } from "./persist";
 
 export type Result<T> = ({ ok: true } & T) | { ok: false; error: string };
 
@@ -24,6 +26,7 @@ export async function createDeck(name: string): Promise<Result<{ deck: Deck }>> 
   const color = nextColor(all.map((item) => item.color), all.length).id;
   const deck: Deck = { id: newId(), name: trimmed, color, createdAt: now, updatedAt: now };
   await db.decks.add(deck);
+  protectOnce();
   return { ok: true, deck };
 }
 
@@ -58,8 +61,18 @@ export async function deleteDeck(id: string): Promise<void> {
   });
 }
 
-/** `dueCount` is cards whose time has come. `newCount` is cards never graded. */
-export type DeckSummary = Deck & { cardCount: number; dueCount: number; newCount: number };
+/**
+ * `dueCount` is cards whose time has come. `newCount` is cards never graded.
+ * `learningCount` is graded cards whose gap is still short, and `masteredCount` those with a gap of 21 days or more.
+ * New, learning and mastered add up to the card count. Due cuts across the last two.
+ */
+export type DeckSummary = Deck & {
+  cardCount: number;
+  dueCount: number;
+  newCount: number;
+  learningCount: number;
+  masteredCount: number;
+};
 
 export async function listDecks(now = Date.now()): Promise<DeckSummary[]> {
   const decks = await db.decks.orderBy("name").toArray();
@@ -72,6 +85,8 @@ export async function listDecks(now = Date.now()): Promise<DeckSummary[]> {
         cardCount: cardIds.size,
         dueCount: schedules.filter((item) => item.due <= now).length,
         newCount: cardIds.size - schedules.length,
+        learningCount: schedules.filter((item) => cardStatus(item) === "learning").length,
+        masteredCount: schedules.filter((item) => cardStatus(item) === "mastered").length,
       };
     }),
   );
@@ -93,7 +108,7 @@ export async function getCard(id: string): Promise<Card | undefined> {
   return db.cards.get(id);
 }
 
-const sameCard = (a: Pick<Card, "kind" | "fen" | "answer">, b: Pick<Card, "kind" | "fen" | "answer">) =>
+export const sameCard = (a: Pick<Card, "kind" | "fen" | "answer">, b: Pick<Card, "kind" | "fen" | "answer">) =>
   a.kind === b.kind &&
   a.fen === b.fen &&
   a.answer.length === b.answer.length &&
@@ -134,6 +149,9 @@ export async function addCards(deckId: string, drafts: CardDraft[], source?: Omi
     if (toAdd.length === 0 && sourceId) await db.sources.delete(sourceId);
     await db.decks.update(deckId, { updatedAt: now });
     return { added: toAdd.length, skipped, ids: toAdd.map((card) => card.id) };
+  }).then((result) => {
+    if (result.added > 0) protectOnce();
+    return result;
   });
 }
 
@@ -164,4 +182,44 @@ export async function storageWorks(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** Every card in every deck, with the name of its deck, for searching. */
+export async function listAllCards(): Promise<{ card: Card; deckName: string; theme: Deck["theme"] }[]> {
+  const [cards, decks] = await Promise.all([db.cards.toArray(), db.decks.toArray()]);
+  const byId = new Map(decks.map((deck) => [deck.id, deck]));
+  return cards
+    .filter((card) => byId.has(card.deckId))
+    .map((card) => ({ card, deckName: byId.get(card.deckId)!.name, theme: byId.get(card.deckId)!.theme }))
+    .sort((a, b) => a.deckName.localeCompare(b.deckName) || a.card.createdAt - b.card.createdAt);
+}
+
+/**
+ * Moves a card to another deck, and its schedule and history go with it.
+ * Nothing moves into or out of the Difficult moves deck, which fills itself with copies, and a card that
+ * matches one already in the target deck stays where it is.
+ */
+export async function moveCard(cardId: string, deckId: string): Promise<Result<{ deckName: string }>> {
+  return db.transaction("rw", [db.cards, db.decks, db.schedules, db.reviews], async () => {
+    const card = await db.cards.get(cardId);
+    const target = await db.decks.get(deckId);
+    if (!card) return { ok: false, error: "That card no longer exists." } as const;
+    if (!target) return { ok: false, error: "That deck no longer exists." } as const;
+    const source = await db.decks.get(card.deckId);
+    if (target.theme === "difficult" || source?.theme === "difficult") {
+      return { ok: false, error: "Cards can't be moved into or out of Difficult moves." } as const;
+    }
+    if (card.deckId === deckId) return { ok: false, error: `It is already in ${target.name}.` } as const;
+    const there = await db.cards.where("deckId").equals(deckId).toArray();
+    if (there.some((other) => sameCard(other, card))) {
+      return { ok: false, error: `${target.name} already has a card with that position and answer.` } as const;
+    }
+    const now = Date.now();
+    await db.cards.put({ ...card, deckId, updatedAt: now });
+    await db.decks.update(deckId, { updatedAt: now });
+    await db.decks.update(card.deckId, { updatedAt: now });
+    await db.schedules.where("cardId").equals(cardId).modify({ deckId });
+    await db.reviews.where("cardId").equals(cardId).modify({ deckId });
+    return { ok: true, deckName: target.name } as const;
+  });
 }

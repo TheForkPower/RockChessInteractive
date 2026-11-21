@@ -17,7 +17,7 @@ function draft(text = "1. e4 e5 2. Nf3 (2. Bc4) 2... Nc6 3. Bb5 a6"): CardDraft 
   return made.draft;
 }
 
-const decks = [{ id: "d1", name: "Open", cardCount: 4, dueCount: 0, newCount: 4, createdAt: 1, updatedAt: 1 }];
+const decks = [{ id: "d1", name: "Open", cardCount: 4, dueCount: 0, newCount: 4, learningCount: 0, masteredCount: 0, createdAt: 1, updatedAt: 1 }];
 const change = (label: string, value: string) => fireEvent.change(screen.getByLabelText(label), { target: { value } });
 const input = (label: string) => screen.getByLabelText(label) as HTMLInputElement | HTMLTextAreaElement;
 

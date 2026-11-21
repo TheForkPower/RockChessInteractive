@@ -5,6 +5,7 @@ import { STORAGE_ERROR } from "../../data/repo";
 import { IDLE_CHOICES, NEW_PER_DAY_CHOICES, RETENTION_CHOICES, type Settings } from "../../domain/settings";
 import { Feedback } from "../../ui/Feedback";
 import { Segmented } from "../../ui/Segmented";
+import { DataSection } from "./DataSection";
 import { GradingChoice } from "./GradingChoice";
 
 const idleLabel = (seconds: number) => (seconds < 60 ? `${seconds} s` : `${seconds / 60} min`);
@@ -108,6 +109,8 @@ export function SettingsPage() {
           />
         </Setting>
       </Section>
+
+      <DataSection />
     </div>
   );
 }

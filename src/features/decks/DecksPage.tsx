@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { STORAGE_ERROR } from "../../data/repo";
 import { useDecks } from "../../data/hooks";
 import { restoreTutorialDeck } from "../../data/seed";
@@ -8,9 +8,14 @@ import { Button } from "../../ui/Button";
 import { Feedback } from "../../ui/Feedback";
 import { PageHeader } from "../../ui/PageHeader";
 import { SessionStart } from "../review/SessionStart";
+import { SearchBox, SearchResults } from "./CardSearch";
 import { DeckDetail, type DeckAction } from "./DeckDetail";
 import { DeckTile, DifficultStrip } from "./DeckTile";
 import { NewDeckForm } from "./NewDeckForm";
+
+/** One half of the dashed tile at the end of the grid. */
+const halfClass =
+  "flex flex-col justify-center rounded-3xl border-2 border-dashed border-line-strong p-5 text-ink-soft transition-colors hover:border-brand hover:bg-brand-wash hover:text-brand";
 
 const ACTIONS: DeckAction[] = ["rename", "colour", "delete"];
 
@@ -19,6 +24,7 @@ export function DecksPage() {
   const decks = useDecks();
   const [problem, setProblem] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [query, setQuery] = useState("");
 
   const requested = params.get("deck");
   const deck = decks?.find((item) => item.id === requested) ?? null;
@@ -64,6 +70,7 @@ export function DecksPage() {
         action={action}
         onSettled={() => setParams({ deck: deck.id })}
         onGone={() => setParams({})}
+        openCard={params.get("card")}
       />
     );
   }
@@ -94,7 +101,15 @@ export function DecksPage() {
         </div>
       ) : null}
 
-      <ul className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+      {decks.some((item) => item.cardCount > 0) ? (
+        <div className="mt-8">
+          <SearchBox value={query} onChange={setQuery} />
+        </div>
+      ) : null}
+
+      {query.trim() !== "" ? <SearchResults query={query} /> : null}
+
+      <ul hidden={query.trim() !== ""} className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {regular.map((item) => (
           <DeckTile key={item.id} deck={item} />
         ))}
@@ -110,19 +125,21 @@ export function DecksPage() {
               />
             </div>
           ) : (
-            <button
-              type="button"
-              onClick={() => setCreating(true)}
-              className="flex w-full flex-col justify-center rounded-3xl border-2 border-dashed border-line-strong p-6 text-left text-ink-soft transition-colors hover:border-brand hover:bg-brand-wash hover:text-brand"
-            >
-              <span className="font-display text-2xl font-bold">New deck</span>
-              <span className="mt-1">Start with an empty deck, then add cards to it.</span>
-            </button>
+            <div className="grid w-full grid-cols-2 gap-3">
+              <button type="button" onClick={() => setCreating(true)} className={`${halfClass} text-left`}>
+                <span className="font-display text-xl font-bold sm:text-2xl">New deck</span>
+                <span className="mt-1 text-sm sm:text-base">An empty deck to fill.</span>
+              </button>
+              <Link to="/create" className={halfClass}>
+                <span className="font-display text-xl font-bold sm:text-2xl">Make cards</span>
+                <span className="mt-1 text-sm sm:text-base">From a PGN or a position.</span>
+              </Link>
+            </div>
           )}
         </li>
       </ul>
 
-      {hasStarter ? null : (
+      {hasStarter || query.trim() !== "" ? null : (
         <div className="mt-8">
           <Button variant="secondary" onClick={addStarterDeck}>
             Add the {TUTORIAL_DECK_NAME} deck
@@ -130,7 +147,7 @@ export function DecksPage() {
         </div>
       )}
 
-      {difficult ? <DifficultStrip deck={difficult} /> : null}
+      {difficult && query.trim() === "" ? <DifficultStrip deck={difficult} /> : null}
     </div>
   );
 }

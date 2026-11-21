@@ -252,3 +252,14 @@ export function smartGrade(input: SmartInput): Suggestion {
   }
   return suggestGrade(input);
 }
+
+/** A card is "mastered" once its gap has reached this many days. Anki calls such a card mature. */
+export const MASTERED_DAYS = 21;
+
+export type CardStatus = "new" | "learning" | "mastered";
+
+/** Where a card stands: never graded, still being learned (short gaps, or lapsed), or mastered (a gap of 21 days or more). */
+export function cardStatus(schedule: Pick<Schedule, "state" | "scheduledDays"> | null | undefined): CardStatus {
+  if (!schedule) return "new";
+  return schedule.state === 2 && schedule.scheduledDays >= MASTERED_DAYS ? "mastered" : "learning";
+}

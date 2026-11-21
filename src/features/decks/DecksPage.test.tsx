@@ -377,7 +377,7 @@ describe("Decks page: a deck's card rows", () => {
     expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
     await userEvent.click(screen.getAllByRole("button", { name: /^More options for/ })[0]);
-    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Edit", "Mark as difficult", "Delete"]);
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Edit", "Move to another deck", "Mark as difficult", "Delete"]);
   });
 
   it("lays every row out the same way, whatever the question's length", async () => {
@@ -653,5 +653,193 @@ describe("Decks page: Start learning & review", () => {
     renderPage();
     await screen.findByText(/You have no decks yet/);
     expect(screen.queryByRole("link", { name: /start learning & review/i })).not.toBeInTheDocument();
+  });
+});
+
+async function gradeCard(cardId: string, scheduledDays: number, due: number, state: 1 | 2 = 2) {
+  const card = await db.cards.get(cardId);
+  if (!card) throw new Error("no card");
+  await db.schedules.put({ cardId, deckId: card.deckId, due, stability: 1, difficulty: 1, scheduledDays, learningSteps: 0, reps: 1, lapses: 0, state, lastReview: 0 });
+}
+
+describe("Decks page: the New deck and Make cards tile", () => {
+  it("shows New deck and a Make cards link side by side, both always there", async () => {
+    await seed("Ruy Lopez", "1. e4 e5 2. Nf3");
+    renderPage();
+    await screen.findByRole("heading", { name: "Ruy Lopez" });
+    expect(screen.getByRole("button", { name: /New deck/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Make cards/ })).toHaveAttribute("href", "/create");
+  });
+
+  it("swaps both for the form while naming a deck, and brings them back after", async () => {
+    await seed("Ruy Lopez", "1. e4 e5 2. Nf3");
+    renderPage();
+    await screen.findByRole("heading", { name: "Ruy Lopez" });
+    await click(/New deck/);
+    expect(screen.getByLabelText("Name your deck")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Make cards/ })).not.toBeInTheDocument();
+    await click("Cancel");
+    expect(screen.getByRole("link", { name: /Make cards/ })).toBeInTheDocument();
+  });
+});
+
+describe("Decks page: counts and filters inside a deck", () => {
+  async function graded() {
+    const id = await seed("Mixed", "1. e4 e5 2. Nf3 Nc6 3. Bb5");
+    const cards = await listCards(id);
+    const future = Date.now() + 40 * 86_400_000;
+    await gradeCard(cards[0].id, 2, 1); // learning, due
+    await gradeCard(cards[1].id, 30, future); // mastered
+    return { id, cards };
+  }
+
+  it("shows new, learning, mastered and due counts", async () => {
+    const { id } = await graded();
+    await openDeck(id, "Mixed");
+    const group = screen.getByRole("group", { name: "Cards by status" });
+    const count = (label: string) => within(group).getByRole("button", { name: new RegExp(label) }).textContent;
+    expect(count("New")).toBe("1New");
+    expect(count("Learning")).toBe("1Learning");
+    expect(count("Mastered")).toBe("1Mastered");
+    expect(count("Due")).toBe("1Due");
+  });
+
+  it("filters the cards by a status, and clears it when pressed again", async () => {
+    const { id } = await graded();
+    await openDeck(id, "Mixed");
+    expect(cardRows()).toHaveLength(3);
+    await click(/^1Mastered$/);
+    expect(cardRows()).toHaveLength(1);
+    expect(screen.getByRole("button", { name: /^1Mastered$/ })).toHaveAttribute("aria-pressed", "true");
+    await click(/^1Mastered$/);
+    expect(cardRows()).toHaveLength(3);
+    await click(/^1New$/);
+    expect(cardRows()).toHaveLength(1);
+  });
+
+  it("says when nothing matches and offers to clear the search", async () => {
+    const { id } = await graded();
+    await openDeck(id, "Mixed");
+    await userEvent.type(screen.getByLabelText("Search this deck"), "zzzz");
+    expect(await screen.findByText(/No cards match/)).toBeInTheDocument();
+    await click("Clear the search");
+    expect(cardRows()).toHaveLength(3);
+    expect(screen.getByLabelText("Search this deck")).toHaveValue("");
+  });
+
+  it("searches inside the deck by a move", async () => {
+    const id = await seed("Mixed", "1. e4 e5 2. Nf3 Nc6 3. Bb5");
+    await openDeck(id, "Mixed");
+    await userEvent.type(screen.getByLabelText("Search this deck"), "Bb5");
+    await waitFor(() => expect(cardRows()).toHaveLength(1));
+  });
+
+  it("filters by a tag chip, and only shows chips for tags the deck uses", async () => {
+    const id = await seed("Tagged", "1. e4 e5 2. Nf3 Nc6");
+    const cards = await listCards(id);
+    await db.cards.update(cards[0].id, { tags: ["Kings pawn"] });
+    await openDeck(id, "Tagged");
+    const chips = screen.getByRole("group", { name: "Tags" });
+    expect(within(chips).getAllByRole("button")).toHaveLength(1);
+    await userEvent.click(within(chips).getByRole("button", { name: "Kings pawn" }));
+    expect(cardRows()).toHaveLength(1);
+    await userEvent.click(within(chips).getByRole("button", { name: "Kings pawn" }));
+    expect(cardRows()).toHaveLength(2);
+  });
+});
+
+describe("Decks page: searching every deck", () => {
+  it("lists matching cards from all decks, each linking to its deck, and hides the grid while searching", async () => {
+    await seed("Ruy Lopez", "1. e4 e5 2. Nf3 Nc6 3. Bb5");
+    const queens = await seed("Queen's Gambit", "1. d4 d5 2. c4");
+    renderPage();
+    await screen.findByRole("heading", { name: "Ruy Lopez" });
+    await userEvent.type(screen.getByLabelText("Search all cards"), "c4");
+    const results = await screen.findByRole("region", { name: "Search results" });
+    const links = within(results).getAllByRole("link");
+    expect(links).toHaveLength(1);
+    expect(links[0].getAttribute("href")).toMatch(new RegExp(`^/decks\\?deck=${queens}&card=`));
+    expect(within(results).getByText(/Queen's Gambit/)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Review Ruy Lopez" })).not.toBeInTheDocument();
+  });
+
+  it("says when nothing matches", async () => {
+    await seed("Ruy Lopez", "1. e4 e5 2. Nf3");
+    renderPage();
+    await screen.findByRole("heading", { name: "Ruy Lopez" });
+    await userEvent.type(screen.getByLabelText("Search all cards"), "zzzz");
+    expect(await screen.findByText("No cards match.")).toBeInTheDocument();
+  });
+
+  it("opens the card a result pointed at", async () => {
+    const id = await seed("Ruy Lopez", "1. e4 e5 2. Nf3 Nc6");
+    const cards = await listCards(id);
+    renderPage(`/decks?deck=${id}&card=${cards[1].id}`);
+    await screen.findAllByRole("button", { name: "Open" });
+    await waitFor(() => expect(document.getElementById(`card-${cards[1].id}`)).toBeInTheDocument());
+  });
+});
+
+describe("Decks page: moving a card", () => {
+  it("moves a card to another deck, with its progress, and takes it off this deck's list", async () => {
+    const from = await seed("From", "1. e4 e5 2. Nf3");
+    const to = await createDeck("To");
+    if (!to.ok) throw new Error(to.error);
+    const [card] = await listCards(from);
+    await gradeCard(card.id, 2, 1);
+    await openDeck(from, "From");
+    await fromCardMenu("Move to another deck");
+    await userEvent.selectOptions(screen.getByLabelText("Move to"), to.deck.id);
+    await click("Move card");
+    await waitFor(async () => expect((await db.cards.get(card.id))?.deckId).toBe(to.deck.id));
+    expect((await db.schedules.get(card.id))?.deckId).toBe(to.deck.id);
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "Open" })).toHaveLength(1));
+  });
+
+  it("can be cancelled without moving anything", async () => {
+    const from = await seed("From", "1. e4 e5 2. Nf3");
+    await createDeck("To");
+    await openDeck(from, "From");
+    await fromCardMenu("Move to another deck");
+    await click("Cancel");
+    expect(screen.queryByLabelText("Move to")).not.toBeInTheDocument();
+    expect(await listCards(from)).toHaveLength(2);
+  });
+
+  it("shows an error when the other deck already has the card", async () => {
+    const from = await seed("From", "1. e4 e5 2. Nf3");
+    const to = await seed("To", "1. e4 e5 2. Nf3");
+    await openDeck(from, "From");
+    await fromCardMenu("Move to another deck");
+    await userEvent.selectOptions(screen.getByLabelText("Move to"), to);
+    await click("Move card");
+    expect(await screen.findByRole("alert")).toHaveTextContent(/already has a card/);
+  });
+
+  it("doesn't offer the move on the Difficult moves deck", async () => {
+    const id = await seed("From", "1. e4 e5 2. Nf3");
+    const [card] = await listCards(id);
+    await installDifficultDeckOnce();
+    await markDifficult(card);
+    const hard = (await listDecks()).find((deck) => deck.theme === "difficult");
+    if (!hard) throw new Error("no difficult deck");
+    await openDeck(hard.id, "Difficult moves");
+    await userEvent.click(screen.getAllByRole("button", { name: /^More options for/ })[0]);
+    expect(screen.queryByRole("menuitem", { name: "Move to another deck" })).not.toBeInTheDocument();
+  });
+});
+
+describe("Decks page: exporting a deck", () => {
+  it("downloads the deck as a backup file", async () => {
+    const id = await seed("Ruy Lopez", "1. e4 e5 2. Nf3");
+    const saved: { name: string; text: string }[] = [];
+    const download = await import("../../data/download");
+    const spy = vi.spyOn(download, "downloadText").mockImplementation((name, text) => void saved.push({ name, text }));
+    await openDeck(id, "Ruy Lopez");
+    await click("Export deck");
+    await waitFor(() => expect(saved).toHaveLength(1));
+    expect(saved[0].name).toMatch(/^rockchess-deck-ruy-lopez-\d{4}-\d{2}-\d{2}\.json$/);
+    expect(JSON.parse(saved[0].text)).toMatchObject({ app: "rockchess", scope: "deck" });
+    spy.mockRestore();
   });
 });
