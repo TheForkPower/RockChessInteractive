@@ -1,8 +1,10 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { App } from "./App";
+
+vi.mock("../board/Board", async () => await import("../test/boardMock"));
 
 function renderAt(path: string) {
   return render(
@@ -15,7 +17,7 @@ function renderAt(path: string) {
 describe("App shell", () => {
   it("shows the home page with an honestly unavailable start button", () => {
     renderAt("/");
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Chess positions you won't forget.");
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Anki for chess positions.");
     const start = screen.getByRole("button", { name: /start learning & review/i });
     expect(start).toHaveAttribute("aria-disabled", "true");
     expect(start).toHaveAccessibleDescription(/not built yet/i);

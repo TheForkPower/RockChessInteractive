@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
-import { CheckIcon, CrossIcon } from "./Icons";
+import { CheckIcon, CrossIcon, InfoIcon } from "./Icons";
 
 type FeedbackProps = {
-  tone: "good" | "bad";
+  tone: "good" | "bad" | "info";
   title: string;
   children?: ReactNode;
 };
@@ -10,6 +10,7 @@ type FeedbackProps = {
 const tones = {
   good: { box: "bg-good-wash text-good-edge", icon: <CheckIcon />, badge: "bg-good text-white" },
   bad: { box: "bg-bad-wash text-bad-edge", icon: <CrossIcon />, badge: "bg-bad text-white" },
+  info: { box: "bg-brand-wash text-brand-edge", icon: <InfoIcon />, badge: "bg-brand text-white" },
 };
 
 /** Result banner shown after the player answers. Announced to screen readers. */

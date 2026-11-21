@@ -16,4 +16,9 @@ export default defineConfig([
       "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
     },
   },
+  {
+    // Test helpers export a component and plain functions together.
+    files: ["src/test/**"],
+    rules: { "react-refresh/only-export-components": "off" },
+  },
 ]);

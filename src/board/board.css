@@ -1,0 +1,68 @@
+/*
+  Board theme. Unlayered on purpose: it has to win over the library's own
+  stylesheet, which is imported before this file.
+*/
+.cm-chessboard.rockchess .board .square.white {
+  fill: #edf0f7;
+}
+.cm-chessboard.rockchess .board .square.black {
+  fill: #9fb0d2;
+}
+.cm-chessboard.rockchess.border-type-none .board .border {
+  stroke-width: 0;
+  fill: #9fb0d2;
+}
+.cm-chessboard.rockchess .coordinates {
+  pointer-events: none;
+  user-select: none;
+}
+.cm-chessboard.rockchess .coordinates .coordinate {
+  font-size: 6px;
+  font-weight: 700;
+}
+.cm-chessboard.rockchess .coordinates .coordinate.white {
+  fill: #7083ad;
+}
+.cm-chessboard.rockchess .coordinates .coordinate.black {
+  fill: #edf0f7;
+}
+
+/* Squares of the last move played. */
+.cm-chessboard .markers .marker.marker-last-move {
+  fill: #f2b33d;
+  opacity: 0.5;
+}
+
+/* Marker colours that read on blue-grey squares. */
+.cm-chessboard .markers .marker.marker-dot,
+.cm-chessboard .markers .marker.marker-bevel {
+  fill: #1d2733;
+  opacity: 0.28;
+}
+.cm-chessboard .markers .marker.marker-frame {
+  stroke: #3a56d4;
+  opacity: 0.7;
+}
+
+/* Promotion choices. */
+svg.cm-chessboard .promotion-dialog-group .promotion-dialog {
+  fill: #ffffff;
+  fill-opacity: 0.95;
+  stroke: #cdd2ca;
+}
+svg.cm-chessboard .promotion-dialog-group .promotion-dialog-button:hover {
+  fill: #e8ecfc;
+}
+svg.cm-chessboard .promotion-dialog-group .promotion-dialog-button-group:focus .promotion-dialog-button {
+  stroke: #3a56d4;
+  stroke-width: 1.5px;
+}
+
+.board-frame {
+  width: 100%;
+  overflow: hidden;
+  border: 2px solid var(--color-line-strong);
+  border-radius: 1rem;
+  background: #9fb0d2;
+  line-height: 0;
+}

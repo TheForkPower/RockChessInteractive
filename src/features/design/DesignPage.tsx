@@ -28,8 +28,8 @@ export function DesignPage() {
   return (
     <div>
       <PageHeader title="Design system">
-        The building blocks every screen uses. Everything here is real and interactive, apart from the sample
-        intervals on the grade buttons.
+        Colours, type and buttons used across the app. Everything here is live, except the sample intervals on the grade
+        buttons.
       </PageHeader>
 
       <Section title="Colour">
@@ -54,8 +54,7 @@ export function DesignPage() {
           <p className="text-6xl/[1.05] font-bold">Bricolage Grotesque</p>
           <p className="text-3xl font-bold">Headings and buttons use Bricolage Grotesque.</p>
           <p className="max-w-prose text-lg">
-            Body text uses Figtree. It stays calm and readable at length, so a line of explanation next to a board
-            never competes with the position.
+            Body text is Figtree. Explanations sit next to the board, so it has to stay out of the way.
           </p>
           <p className="text-sm text-ink-soft">Small text for notes and secondary detail.</p>
         </div>
@@ -75,8 +74,8 @@ export function DesignPage() {
           </ButtonLink>
         </div>
         <p className="mt-3 max-w-prose text-sm text-ink-soft">
-          Buttons press down onto their lower edge. Unavailable buttons stay focusable so the reason beside them can be
-          read aloud.
+          Buttons press down onto their lower edge. Unavailable buttons stay focusable, so a screen reader can read the
+          reason next to them.
         </p>
       </Section>
 
