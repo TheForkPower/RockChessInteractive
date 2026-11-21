@@ -1,0 +1,194 @@
+@import "tailwindcss";
+@import "@fontsource-variable/figtree";
+@import "@fontsource-variable/bricolage-grotesque";
+
+/*
+  RockChess Recall design tokens.
+  Cool off-white paper, slate ink, one ultramarine accent.
+  Success, error and caution colours appear only where they carry meaning.
+*/
+@theme {
+  --font-sans: "Figtree Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Bricolage Grotesque Variable", "Figtree Variable", ui-sans-serif, system-ui, sans-serif;
+
+  --color-paper: #f5f6f3;
+  --color-surface: #ffffff;
+  --color-ink: #1d2733;
+  --color-ink-soft: #566170;
+  --color-line: #e2e5df;
+  --color-line-strong: #cdd2ca;
+
+  --color-brand: #3a56d4;
+  --color-brand-edge: #2a3fa6;
+  --color-brand-wash: #e8ecfc;
+
+  --color-good: #23874c;
+  --color-good-edge: #19673a;
+  --color-good-wash: #e2f3e8;
+
+  --color-bad: #cc3b30;
+  --color-bad-edge: #9c2a22;
+  --color-bad-wash: #fbe6e4;
+
+  --color-caution: #f2b33d;
+  --color-caution-edge: #c58a14;
+  --color-caution-wash: #fcf0d6;
+
+  --radius-button: 1rem;
+  --radius-panel: 1.25rem;
+}
+
+@layer base {
+  html {
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    min-height: 100dvh;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+
+  :focus-visible {
+    outline: 3px solid var(--color-brand);
+    outline-offset: 3px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      transition-duration: 0.01ms !important;
+      animation-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  /* Rounded buttons with a solid lower edge that flattens when pressed. */
+  .btn {
+    --btn-bg: var(--color-brand);
+    --btn-edge: var(--color-brand-edge);
+    --btn-ink: #ffffff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 3rem;
+    padding: 0 1.5rem;
+    border: 2px solid transparent;
+    border-radius: var(--radius-button);
+    background: var(--btn-bg);
+    color: var(--btn-ink);
+    font-family: var(--font-display);
+    font-size: 1.0625rem;
+    font-weight: 700;
+    line-height: 1;
+    text-decoration: none;
+    box-shadow: 0 4px 0 var(--btn-edge);
+    cursor: pointer;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    transition:
+      transform 80ms ease,
+      box-shadow 80ms ease,
+      filter 120ms ease;
+  }
+
+  .btn:hover {
+    filter: brightness(1.07);
+  }
+
+  .btn:active {
+    transform: translateY(4px);
+    box-shadow: 0 0 0 var(--btn-edge);
+  }
+
+  .btn-lg {
+    min-height: 3.5rem;
+    padding: 0 2rem;
+    border-radius: 1.125rem;
+    font-size: 1.1875rem;
+  }
+
+  .btn-primary {
+    --btn-bg: var(--color-brand);
+    --btn-edge: var(--color-brand-edge);
+    --btn-ink: #ffffff;
+  }
+
+  .btn-secondary {
+    --btn-bg: #ffffff;
+    --btn-edge: var(--color-line-strong);
+    --btn-ink: var(--color-brand);
+    border-color: var(--color-line-strong);
+  }
+
+  .btn-secondary:hover {
+    filter: none;
+    background: #f8f9f6;
+  }
+
+  .btn-good {
+    --btn-bg: var(--color-good);
+    --btn-edge: var(--color-good-edge);
+    --btn-ink: #ffffff;
+  }
+
+  .btn-danger {
+    --btn-bg: var(--color-bad);
+    --btn-edge: var(--color-bad-edge);
+    --btn-ink: #ffffff;
+  }
+
+  .btn-caution {
+    --btn-bg: var(--color-caution);
+    --btn-edge: var(--color-caution-edge);
+    --btn-ink: var(--color-ink);
+  }
+
+  .btn[aria-disabled="true"] {
+    --btn-bg: #e8eae5;
+    --btn-edge: #d3d7cf;
+    --btn-ink: #727b87;
+    cursor: not-allowed;
+    filter: none;
+  }
+
+  .btn[aria-disabled="true"]:active {
+    transform: none;
+    box-shadow: 0 4px 0 var(--btn-edge);
+  }
+
+  /* Grade buttons: the label with the next review interval underneath. */
+  .btn-grade {
+    flex-direction: column;
+    gap: 0.35rem;
+    min-height: 4.5rem;
+    padding: 0 1rem;
+    width: 100%;
+  }
+
+  .btn-grade .interval {
+    font-family: var(--font-sans);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    opacity: 0.85;
+  }
+
+  .panel {
+    background: var(--color-surface);
+    border: 2px solid var(--color-line);
+    border-radius: var(--radius-panel);
+  }
+}
