@@ -3,7 +3,7 @@ import type { Outcome, Tally } from "../domain/review";
 import { applyGrade, RATING, type Grade, type Schedule } from "../domain/scheduling";
 import { DEFAULT_SETTINGS, normaliseSettings, type Settings } from "../domain/settings";
 import type { Timing } from "../domain/timing";
-import { db, type ReviewEntry } from "./db";
+import { db, type Deck, type ReviewEntry } from "./db";
 import { newId } from "./repo";
 
 // --------------------------------------------------------------- settings
@@ -26,42 +26,121 @@ export async function saveSettings(patch: Partial<Settings>): Promise<Settings> 
 
 // ----------------------------------------------------------------- queues
 
+/** Midnight at the start of the day `time` falls in, in the local time zone. */
+export function startOfDay(time: number): number {
+  const date = new Date(time);
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+}
+
 /**
- * How many never-seen cards one session brings in, until daily limits arrive in
- * milestone 5.
+ * The Difficult moves deck is made of copies of cards you already know, so
+ * its cards aren't counted against the daily limit and don't join the combined
+ * session as new cards.
  */
-export const NEW_PER_SESSION = 10;
+async function difficultDeckIds(): Promise<Set<string>> {
+  const decks = await db.decks.filter((deck) => deck.theme === "difficult").toArray();
+  return new Set(decks.map((deck) => deck.id));
+}
+
+/** How many cards were introduced (graded for the first time) today, apart from the Difficult moves deck. */
+export async function introducedToday(now = Date.now()): Promise<number> {
+  const skip = await difficultDeckIds();
+  const first = await db.reviews
+    .where("reviewedAt")
+    .aboveOrEqual(startOfDay(now))
+    .filter((entry) => entry.before.state === 0 && !skip.has(entry.deckId))
+    .toArray();
+  return new Set(first.map((entry) => entry.cardId)).size;
+}
 
 export type Queue = {
   /** Cards whose time has come, the longest overdue first. */
   due: Card[];
-  /** Cards that have never been graded, in the order they were made. */
+  /** Cards that have never been graded, in the order they were made, whatever today's limit is. */
   fresh: Card[];
+  /** How many of those may be introduced today. */
+  allowance: number;
+  /** New cards introduced today, and the daily limit. */
+  introduced: number;
+  limit: number;
   /** The saved schedule for each due card. */
   schedules: Record<string, Schedule>;
-  /** Every card in the deck. */
+  /** Every card in scope. */
   total: number;
   /** When the soonest card that isn't due yet comes back, or null if there is none. */
   nextDue: number | null;
+  /** The decks the cards belong to. */
+  decks: Record<string, Deck>;
 };
 
-export async function getQueue(deckId: string, now = Date.now()): Promise<Queue> {
-  const cards = await db.cards.where("deckId").equals(deckId).toArray();
+/**
+ * What is waiting: one deck's cards, or every deck's when no deck is given.
+ * Due cards are always included. New cards are listed in full, and `allowance`
+ * says how many of them today's limit lets in. The Difficult moves deck is never
+ * limited, and its cards don't join the all-decks list as new.
+ */
+export async function getQueue(deckId: string | null, now = Date.now()): Promise<Queue> {
+  const decks = await db.decks.toArray();
+  const byDeck = Object.fromEntries(decks.map((deck) => [deck.id, deck]));
+  const scope = deckId ? [deckId] : decks.map((deck) => deck.id);
+  const cards = (await db.cards.where("deckId").anyOf(scope).toArray()).filter((card) => byDeck[card.deckId]);
   const byId = new Map(cards.map((card) => [card.id, card]));
-  const schedules = await db.schedules.where("deckId").equals(deckId).toArray();
+  const schedules = await db.schedules.where("deckId").anyOf(scope).toArray();
   const scheduled = new Set(schedules.map((item) => item.cardId));
   const dueSchedules = schedules.filter((item) => item.due <= now && byId.has(item.cardId)).sort((a, b) => a.due - b.due);
-  const deck = await db.decks.get(deckId);
-  const fresh = cards.filter((card) => !scheduled.has(card.id)).sort((a, b) => a.createdAt - b.createdAt || (a.sourcePly ?? 0) - (b.sourcePly ?? 0));
-  // The Difficult moves deck brings the cards that give you the most trouble first.
-  if (deck?.theme === "difficult") fresh.sort((a, b) => (b.struggles ?? 0) - (a.struggles ?? 0) || b.updatedAt - a.updatedAt);
   const later = schedules.filter((item) => item.due > now && byId.has(item.cardId)).map((item) => item.due);
+
+  const deckOrder = new Map(decks.map((deck) => [deck.id, deck.createdAt]));
+  let fresh = cards.filter((card) => !scheduled.has(card.id));
+  if (!deckId) fresh = fresh.filter((card) => byDeck[card.deckId].theme !== "difficult");
+  fresh.sort(
+    (a, b) =>
+      (deckOrder.get(a.deckId) ?? 0) - (deckOrder.get(b.deckId) ?? 0) ||
+      a.createdAt - b.createdAt ||
+      (a.sourcePly ?? 0) - (b.sourcePly ?? 0),
+  );
+  // The Difficult moves deck brings the cards that give you the most trouble first.
+  if (deckId && byDeck[deckId]?.theme === "difficult") {
+    fresh.sort((a, b) => (b.struggles ?? 0) - (a.struggles ?? 0) || b.updatedAt - a.updatedAt);
+  }
+
+  const { newPerDay } = await getSettings();
+  const introduced = await introducedToday(now);
+  const unlimited = deckId !== null && byDeck[deckId]?.theme === "difficult";
   return {
     total: cards.length,
     nextDue: later.length > 0 ? Math.min(...later) : null,
     due: dueSchedules.map((item) => byId.get(item.cardId) as Card),
     fresh,
+    allowance: unlimited ? fresh.length : Math.max(0, newPerDay - introduced),
+    introduced,
+    limit: newPerDay,
     schedules: Object.fromEntries(dueSchedules.map((item) => [item.cardId, item])),
+    decks: byDeck,
+  };
+}
+
+export type Overview = {
+  /** Cards due now, in every deck. */
+  due: number;
+  /** New cards today's limit lets in. */
+  fresh: number;
+  /** New cards in all, whatever the limit. */
+  newTotal: number;
+  introduced: number;
+  limit: number;
+};
+
+/** The numbers behind "Start learning & review": how much is due and how many new cards can come in today. */
+export async function getOverview(now = Date.now()): Promise<Overview> {
+  const queue = await getQueue(null, now);
+  return {
+    due: queue.due.length,
+    fresh: Math.min(queue.fresh.length, queue.allowance),
+    newTotal: queue.fresh.length,
+    introduced: queue.introduced,
+    limit: queue.limit,
   };
 }
 
@@ -105,6 +184,8 @@ export type GradeInput = {
   suggested: Grade;
   nudged: boolean;
   outcome: Outcome;
+  /** "learn" when the card is being introduced and the grade is worked out for the person. */
+  phase?: "learn" | "review";
   tally: Tally;
   playerMoves: number;
   timing: Timing;
@@ -129,6 +210,7 @@ export async function recordReview(input: GradeInput): Promise<Schedule> {
       suggested: RATING[input.suggested],
       nudged: input.nudged,
       outcome: input.outcome,
+      phase: input.phase ?? "review",
       mistakes: input.tally.mistakes,
       hintUsed: input.tally.hintUsed,
       revealed: input.tally.revealed,

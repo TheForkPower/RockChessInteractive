@@ -5,8 +5,9 @@ import { parseMovetext } from "../domain/pgn";
 import { DEFAULT_SETTINGS } from "../domain/settings";
 import type { Timing } from "../domain/timing";
 import { db } from "./db";
-import { getQueue, getSettings, listReviews, recentMoveTimes, recordReview, resetProgress, saveSettings, type GradeInput } from "./progress";
+import { getOverview, getQueue, getSettings, introducedToday, listReviews, recentMoveTimes, recordReview, resetProgress, saveSettings, type GradeInput } from "./progress";
 import { addCards, createDeck, deleteCard, deleteDeck, listDecks, updateCard } from "./repo";
+import { markDifficult } from "./difficult";
 
 const DAY = 86_400_000;
 const T0 = new Date(2026, 5, 10, 12).getTime();
@@ -67,8 +68,8 @@ describe("settings", () => {
   });
 
   it("repairs saved values that make no sense", async () => {
-    await db.meta.put({ key: "settings", value: { desiredRetention: 7, timeSignal: "yes", idleSeconds: -3 } });
-    expect(await getSettings()).toEqual({ desiredRetention: 0.95, timeSignal: true, idleSeconds: 15 });
+    await db.meta.put({ key: "settings", value: { desiredRetention: 7, timeSignal: "yes", idleSeconds: -3, newPerDay: 9999 } });
+    expect(await getSettings()).toEqual({ desiredRetention: 0.95, timeSignal: true, idleSeconds: 15, newPerDay: 50 });
   });
 });
 
@@ -214,5 +215,96 @@ describe("cleaning up", () => {
     await updateCard({ ...cards[0], deckId: other.deck.id });
     expect((await db.schedules.get(cards[0].id))?.deckId).toBe(other.deck.id);
     expect((await listReviews(cards[0].id))[0].deckId).toBe(other.deck.id);
+  });
+});
+
+describe("the daily limit", () => {
+  const cardsFor = async (text: string, name: string) => {
+    const made = await createDeck(name);
+    if (!made.ok) throw new Error(made.error);
+    const parsed = parseMovetext(text, START_FEN);
+    if (!parsed.ok) throw new Error(parsed.error);
+    const built = buildDeckCards(parsed.tree, { side: "w", shape: "moves", context: "rest" });
+    if (!built.ok) throw new Error(built.error);
+    await addCards(made.deck.id, built.drafts);
+    return { deckId: made.deck.id, cards: await db.cards.where("deckId").equals(made.deck.id).toArray() };
+  };
+
+  it("allows the limit's worth of new cards, and fewer as cards are introduced", async () => {
+    await saveSettings({ newPerDay: 5 });
+    const { deckId, cards } = await cardsFor("1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 6. Re1 b5 7. Bb3 d6", "Long");
+    expect(cards.length).toBeGreaterThan(5);
+    expect(await getQueue(deckId, T0)).toMatchObject({ allowance: 5, limit: 5, introduced: 0 });
+    await recordReview(grade(cards[0], { now: T0 }));
+    await recordReview(grade(cards[1], { now: T0 + 1 }));
+    expect(await getQueue(deckId, T0 + 2)).toMatchObject({ allowance: 3, introduced: 2 });
+    expect((await getQueue(deckId, T0 + 2)).fresh).toHaveLength(cards.length - 2);
+  });
+
+  it("counts a card once, on the day it was first graded, and starts again tomorrow", async () => {
+    const { cards } = await cardsFor("1. e4 e5 2. Nf3", "Open");
+    const first = await recordReview(grade(cards[0], { now: T0 }));
+    await recordReview(grade(cards[0], { now: first.due }));
+    expect(await introducedToday(T0 + 1000)).toBe(1);
+    expect(await introducedToday(first.due + 1000)).toBe(0); // reviewing it again later isn't introducing it
+    expect(await introducedToday(T0 + 2 * DAY)).toBe(0);
+  });
+
+  it("never lets the allowance go below zero", async () => {
+    await saveSettings({ newPerDay: 5 });
+    const { cards } = await cardsFor("1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 6. Re1 b5 7. Bb3 d6", "Long");
+    for (let i = 0; i < 7; i += 1) await recordReview(grade(cards[i], { now: T0 + i }));
+    expect((await getQueue(null, T0 + 100)).allowance).toBe(0);
+  });
+});
+
+describe("the queue over every deck", () => {
+  it("lists due cards from all decks, longest overdue first, and new cards deck by deck", async () => {
+    const a = await deckWithCards("1. e4 e5");
+    const bMade = await createDeck("Second");
+    if (!bMade.ok) throw new Error(bMade.error);
+    const parsed = parseMovetext("1. d4 d5", START_FEN);
+    if (!parsed.ok) throw new Error(parsed.error);
+    const built = buildDeckCards(parsed.tree, { side: "w", shape: "moves", context: "rest" });
+    if (!built.ok) throw new Error(built.error);
+    await addCards(bMade.deck.id, built.drafts);
+    const bCards = await db.cards.where("deckId").equals(bMade.deck.id).toArray();
+
+    const untouched = await getQueue(null, T0);
+    expect(untouched.fresh.map((card) => card.deckId)).toEqual([a.deckId, bMade.deck.id]);
+
+    await recordReview(grade(a.cards[0], { now: T0 - 10 * DAY }));
+    await recordReview(grade(bCards[0], { now: T0 - 40 * DAY }));
+    const queue = await getQueue(null, T0 + 60 * DAY);
+    expect(queue.due.map((card) => card.deckId)).toEqual([bMade.deck.id, a.deckId]);
+    expect(queue.total).toBe(a.cards.length + bCards.length);
+    expect(Object.keys(queue.decks)).toHaveLength(2);
+  });
+
+  it("leaves the Difficult moves deck's new cards out, and doesn't count them against the limit", async () => {
+    const { deckId, cards } = await deckWithCards("1. e4 e5");
+    await markDifficult(cards[0]);
+    const hard = (await db.decks.toArray()).find((deck) => deck.theme === "difficult")!;
+    const copy = (await db.cards.where("deckId").equals(hard.id).toArray())[0];
+
+    const everything = await getQueue(null, T0);
+    expect(everything.fresh.map((card) => card.id)).not.toContain(copy.id);
+    expect(everything.fresh.map((card) => card.deckId)).toEqual(Array(cards.length).fill(deckId));
+
+    const own = await getQueue(hard.id, T0);
+    expect(own.fresh.map((card) => card.id)).toEqual([copy.id]);
+    expect(own.allowance).toBe(own.fresh.length); // unlimited
+
+    await saveSettings({ newPerDay: 5 });
+    await recordReview(grade(copy, { now: T0 }));
+    expect(await introducedToday(T0 + 1)).toBe(0);
+  });
+
+  it("summarises what is due and how many new cards today's limit lets in", async () => {
+    await saveSettings({ newPerDay: 5 });
+    const { cards } = await deckWithCards("1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 6. Re1 b5 7. Bb3 d6");
+    await recordReview(grade(cards[0], { now: T0 - 30 * DAY }));
+    const overview = await getOverview(T0);
+    expect(overview).toMatchObject({ due: 1, fresh: 5, newTotal: cards.length - 1, limit: 5 });
   });
 });

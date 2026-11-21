@@ -34,7 +34,7 @@ describe("App shell", () => {
       "Play the answer on the board",
       "Each card comes back when it's due",
     ]);
-    expect(screen.getByRole("link", { name: /start learning & review/i })).toHaveAttribute("href", "/decks");
+    expect(screen.getByRole("link", { name: /start learning & review/i })).toHaveAttribute("href", "/review?all=1");
   });
 
   it("has a Tools menu in the header with Recall as its only option", async () => {

@@ -7,6 +7,7 @@ import { TUTORIAL_DECK_NAME } from "../../data/tutorialDeck";
 import { Button } from "../../ui/Button";
 import { Feedback } from "../../ui/Feedback";
 import { PageHeader } from "../../ui/PageHeader";
+import { SessionStart } from "../review/SessionStart";
 import { DeckDetail, type DeckAction } from "./DeckDetail";
 import { DeckTile, DifficultStrip } from "./DeckTile";
 
@@ -82,6 +83,12 @@ export function DecksPage() {
           <Feedback tone="bad" title="That didn't work">
             {problem}
           </Feedback>
+        </div>
+      ) : null}
+
+      {regular.length > 0 ? (
+        <div className="mt-8">
+          <SessionStart />
         </div>
       ) : null}
 

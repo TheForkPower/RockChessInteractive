@@ -25,6 +25,7 @@ describe("Settings", () => {
     renderSettings();
     expect(await screen.findByRole("radio", { name: "90%" })).toHaveAttribute("aria-checked", "true");
     expect(screen.getByRole("radio", { name: "30 s" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("radio", { name: "10" })).toHaveAttribute("aria-checked", "true");
     expect(screen.getAllByRole("radio", { name: "On" })[0]).toHaveAttribute("aria-checked", "true");
   });
 
@@ -34,7 +35,10 @@ describe("Settings", () => {
     await waitFor(async () => expect((await getSettings()).desiredRetention).toBe(0.95));
     await userEvent.click(screen.getByRole("radio", { name: "Off" }));
     await userEvent.click(screen.getByRole("radio", { name: "2 min" }));
-    await waitFor(async () => expect(await getSettings()).toEqual({ ...DEFAULT_SETTINGS, desiredRetention: 0.95, timeSignal: false, idleSeconds: 120 }));
+    await userEvent.click(screen.getByRole("radio", { name: "30" }));
+    await waitFor(async () =>
+      expect(await getSettings()).toEqual({ ...DEFAULT_SETTINGS, desiredRetention: 0.95, timeSignal: false, idleSeconds: 120, newPerDay: 30 }),
+    );
     expect(screen.getByRole("radio", { name: "95%" })).toHaveAttribute("aria-checked", "true");
   });
 });

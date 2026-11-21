@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { saveSettings } from "../../data/progress";
 import { useSettings } from "../../data/hooks";
 import { STORAGE_ERROR } from "../../data/repo";
-import { IDLE_CHOICES, RETENTION_CHOICES, type Settings } from "../../domain/settings";
+import { IDLE_CHOICES, NEW_PER_DAY_CHOICES, RETENTION_CHOICES, type Settings } from "../../domain/settings";
 import { Feedback } from "../../ui/Feedback";
 import { Segmented } from "../../ui/Segmented";
 
@@ -55,6 +55,14 @@ export function SettingsPage() {
       ) : null}
 
       <Section id="scheduling" title="Scheduling">
+        <Setting label="New cards per day" hint="How many cards you haven't seen are introduced each day, across all decks.">
+          <Segmented
+            label="New cards per day"
+            value={String(settings.newPerDay)}
+            options={NEW_PER_DAY_CHOICES.map((value) => ({ value: String(value), label: String(value) }))}
+            onChange={(value) => void change({ newPerDay: Number(value) })}
+          />
+        </Setting>
         <Setting label="How much you want to remember" hint="Higher means more reviews.">
           <Segmented
             label="How much you want to remember"

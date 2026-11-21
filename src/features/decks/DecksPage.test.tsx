@@ -582,3 +582,30 @@ describe("Decks page: what is due", () => {
     expect(await db.schedules.count()).toBe(1);
   });
 });
+
+describe("Decks page: Start learning & review", () => {
+  it("shows how much is due and how many new cards can come in, and links to the combined session", async () => {
+    const id = await seed("Open", "1. e4 e5 2. Nf3 Nc6 3. Bb5");
+    const { recordReview } = await import("../../data/progress");
+    const [first] = await listCards(id);
+    await recordReview(gradeInput(first, Date.now() - 40 * 86_400_000));
+    renderPage();
+    const link = await screen.findByRole("link", { name: /start learning & review/i });
+    expect(link).toHaveAttribute("href", "/review?all=1");
+    expect(await screen.findByText("1 due, 2 new")).toBeInTheDocument();
+  });
+
+  it("limits the new cards it counts to the daily limit", async () => {
+    const { saveSettings } = await import("../../data/progress");
+    await saveSettings({ newPerDay: 5 });
+    await seed("Long", "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 6. Re1 b5 7. Bb3 d6");
+    renderPage();
+    expect(await screen.findByText("5 new")).toBeInTheDocument();
+  });
+
+  it("isn't shown when there are no decks", async () => {
+    renderPage();
+    await screen.findByText(/You have no decks yet/);
+    expect(screen.queryByRole("link", { name: /start learning & review/i })).not.toBeInTheDocument();
+  });
+});

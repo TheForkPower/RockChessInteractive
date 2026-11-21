@@ -45,6 +45,8 @@ export type ReviewEntry = {
   /** True when response time lifted the suggestion. */
   nudged: boolean;
   outcome: Outcome;
+  /** "learn" for the first review of a card, when it was introduced and graded automatically. Older lines have none. */
+  phase?: "learn" | "review";
   mistakes: number;
   hintUsed: boolean;
   revealed: boolean;

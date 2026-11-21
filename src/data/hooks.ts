@@ -3,7 +3,7 @@ import type { Card } from "../domain/cards";
 import { DEFAULT_SETTINGS, type Settings } from "../domain/settings";
 import type { Schedule } from "../domain/scheduling";
 import type { ReviewEntry } from "./db";
-import { getSettings, listReviews, listSchedules } from "./progress";
+import { getOverview, getSettings, listReviews, listSchedules, type Overview } from "./progress";
 import { listCards, listDecks, type DeckSummary } from "./repo";
 
 /**
@@ -46,4 +46,15 @@ export function useSchedules(deckId: string): Record<string, Schedule> | undefin
 
 export function useCardReviews(cardId: string | null): ReviewEntry[] | undefined {
   return useLiveQuery(() => (cardId ? listReviews(cardId).catch(() => []) : []), [cardId]);
+}
+
+/** How much is due, and how many new cards today's limit lets in, across every deck. */
+export function useOverview(): Overview | null | undefined {
+  return useLiveQuery(async () => {
+    try {
+      return await getOverview();
+    } catch {
+      return null;
+    }
+  }, []);
 }

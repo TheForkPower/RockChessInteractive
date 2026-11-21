@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "../../data/db";
+import { recordReview, saveSettings } from "../../data/progress";
 import { addCards, createDeck, listCards, listDecks } from "../../data/repo";
 import { buildDeckCards, type CardDraft } from "../../domain/cards";
 import { START_FEN } from "../../domain/fen";
@@ -471,13 +472,39 @@ describe("Review: the Difficult moves deck", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Scheduled review: grades are asked for and saved.
+// Scheduled sessions: grades for cards that are due, and learning for new ones.
 
 const DAY = 86_400_000;
+const E4 = { from: "e2", to: "e4" } as const;
 
 const gradeGroup = () => screen.findByRole("group", { name: "How did it go?" });
 const gradeButton = async (label: string) => within(await gradeGroup()).getByRole("button", { name: new RegExp(`^${label}`) });
 const intervalOf = async (label: string) => (await gradeButton(label)).querySelector(".interval")?.textContent;
+const finished = (text: string | RegExp) => screen.findByRole("heading", { name: text });
+const lastReview = async () => (await db.reviews.orderBy("reviewedAt").toArray()).at(-1)!;
+
+const quickTiming = { shownAt: 0, firstMoveAt: 1, completedAt: 2, elapsedMs: 2, activeMs: 2, idleMs: 0, hiddenMs: 0, firstMoveActiveMs: 1, flags: [], reliable: true };
+
+/** Grades a card as if it had been learned a while ago. */
+async function gradeCard(card: Awaited<ReturnType<typeof listCards>>[number], daysAgo: number) {
+  return recordReview({
+    card,
+    grade: "good",
+    suggested: "good",
+    nudged: false,
+    outcome: "first-try",
+    tally: { mistakes: 0, hintUsed: false, revealed: false, played: 1 },
+    playerMoves: 1,
+    timing: quickTiming,
+    desiredRetention: 0.9,
+    now: Date.now() - daysAgo * DAY,
+  });
+}
+
+/** Makes every card in a deck due, by grading it 30 days ago. */
+async function makeDue(deckId: string) {
+  for (const card of await listCards(deckId)) await gradeCard(card, 30);
+}
 
 async function seedFastHistory(count: number, activeMs = 8000) {
   const entries = Array.from({ length: count }, (_, i) => ({
@@ -494,20 +521,26 @@ async function seedFastHistory(count: number, activeMs = 8000) {
     revealed: false,
     playerMoves: 1,
     timing: { activeMs, idleMs: 0, hiddenMs: 0, elapsedMs: activeMs, firstMoveMs: activeMs, flags: [], reliable: true },
-    before: { state: 0, due: null, stability: null, difficulty: null },
+    before: { state: 2, due: 1, stability: 3, difficulty: 5 },
     after: { state: 2, due: 5000, stability: 3, difficulty: 5, scheduledDays: 3 },
-    elapsedDays: 0,
+    elapsedDays: 1,
     desiredRetention: 0.9,
   }));
   await db.reviews.bulkAdd(entries as never);
 }
 
-describe("Scheduled review: asking for a grade", () => {
+async function dueDeck(name = "Openings", text = "1. e4 e5") {
+  const id = await makeDeck(name, drafts(text, "moves"));
+  await makeDue(id);
+  return id;
+}
+
+describe("Review: asking for a grade", () => {
   it("shows four grades with real intervals once the answer is out, and no Next card button", async () => {
-    const id = await makeDeck("Openings", drafts("1. e4 e5", "moves"));
+    const id = await dueDeck();
     renderReview(`?deck=${id}`, { scheduled: true });
     await screen.findByText("Card 1 of 1");
-    await play({ from: "e2", to: "e4" });
+    await play(E4);
     const group = await gradeGroup();
     expect(within(group).getAllByRole("button").map((button) => button.textContent?.replace(/\d.*$/, ""))).toEqual(["Again", "Hard", "Good", "Easy"]);
     for (const label of ["Again", "Hard", "Good", "Easy"]) expect(await intervalOf(label)).toMatch(/^\d+ (day|days|month|months)$/);
@@ -516,45 +549,49 @@ describe("Scheduled review: asking for a grade", () => {
   });
 
   it("suggests Good for a first-try answer and says why", async () => {
-    const id = await makeDeck("Openings", drafts("1. e4 e5", "moves"));
+    const id = await dueDeck();
     renderReview(`?deck=${id}`, { scheduled: true });
     await screen.findByText("Card 1 of 1");
-    await play({ from: "e2", to: "e4" });
+    await play(E4);
     expect(await screen.findByText(/Suggested: Good\. Right first time\./)).toBeInTheDocument();
   });
 
   it("saves the schedule and the grade that was pressed, then moves on", async () => {
-    const id = await makeDeck("Openings", drafts("1. e4 e5", "moves"));
+    const id = await dueDeck();
+    const [card] = await listCards(id);
+    const before = await db.schedules.get(card.id);
     renderReview(`?deck=${id}`, { scheduled: true });
     await screen.findByText("Card 1 of 1");
-    await play({ from: "e2", to: "e4" });
+    await play(E4);
     const shown = await intervalOf("Good");
     await userEvent.click(await gradeButton("Good"));
-    expect(await screen.findByRole("heading", { name: "You went through 1 card" })).toBeInTheDocument();
+    expect(await finished("You went through 1 card")).toBeInTheDocument();
 
-    const [schedule] = await db.schedules.toArray();
-    expect(schedule.reps).toBe(1);
-    const [entry] = await db.reviews.toArray();
-    expect(entry).toMatchObject({ rating: 3, suggested: 3, outcome: "first-try", cardId: schedule.cardId });
+    const schedule = (await db.schedules.get(card.id))!;
+    expect(schedule.reps).toBe(2);
+    expect(schedule.due).toBeGreaterThan(before!.due);
+    const entry = await lastReview();
+    expect(entry).toMatchObject({ rating: 3, suggested: 3, outcome: "first-try", phase: "review", cardId: card.id });
+    expect(entry.before.due).toBe(before!.due);
+    expect(entry.elapsedDays).toBeGreaterThan(29);
     const { formatInterval } = await import("../../domain/scheduling");
     expect(shown).toBe(formatInterval((schedule.due - entry.reviewedAt) / DAY));
   });
 
   it("gives FSRS the grade the person chose, not the one suggested", async () => {
-    const id = await makeDeck("Openings", drafts("1. e4 e5", "moves"));
+    const id = await dueDeck();
     renderReview(`?deck=${id}`, { scheduled: true });
     await screen.findByText("Card 1 of 1");
     expect(dropMove({ from: "d2", to: "d4" })).toBe(false);
-    await play({ from: "e2", to: "e4" });
+    await play(E4);
     expect(await screen.findByText(/Suggested: Hard\. It took a hint or a second try\./)).toBeInTheDocument();
     await userEvent.click(await gradeButton("Easy"));
-    await screen.findByRole("heading", { name: "You went through 1 card" });
-    const [entry] = await db.reviews.toArray();
-    expect(entry).toMatchObject({ rating: 4, suggested: 2, outcome: "with-help", mistakes: 1 });
+    await finished("You went through 1 card");
+    expect(await lastReview()).toMatchObject({ rating: 4, suggested: 2, outcome: "with-help", mistakes: 1 });
   });
 
   it("suggests Again after the answer was shown", async () => {
-    const id = await makeDeck("Openings", drafts("1. e4 e5", "moves"));
+    const id = await dueDeck();
     renderReview(`?deck=${id}`, { scheduled: true });
     await screen.findByText("Card 1 of 1");
     dropMove({ from: "d2", to: "d4" });
@@ -566,7 +603,7 @@ describe("Scheduled review: asking for a grade", () => {
     const id = await makeDeck("Openings", drafts("1. e4 e5", "moves"));
     renderReview(`?deck=${id}`);
     await screen.findByText("Card 1 of 1");
-    await play({ from: "e2", to: "e4" });
+    await play(E4);
     expect(await screen.findByRole("button", { name: "See results" })).toBeInTheDocument();
     expect(screen.queryByRole("group", { name: "How did it go?" })).not.toBeInTheDocument();
     expect(await db.schedules.count()).toBe(0);
@@ -574,50 +611,93 @@ describe("Scheduled review: asking for a grade", () => {
   });
 
   it("only counts a card once it has been graded", async () => {
-    const id = await makeDeck("Two", [...drafts("1. e4 e5", "moves"), ...drafts("1. d4 d5", "moves")]);
+    const id = await dueDeck("Two", "1. e4 e5 2. Nf3");
     renderReview(`?deck=${id}`, { scheduled: true });
     await screen.findByText("Card 1 of 2");
-    await play({ from: "e2", to: "e4" });
+    await play(E4);
     await gradeGroup();
     await click("End session");
-    expect(await screen.findByRole("heading", { name: "Session ended" })).toBeInTheDocument();
-    expect(await db.schedules.count()).toBe(0);
+    expect(await finished("Session ended")).toBeInTheDocument();
+    expect((await db.reviews.toArray()).length).toBe(2);
+  });
+
+  it("only brings cards that are due, longest overdue first", async () => {
+    const id = await makeDeck("Two", [...drafts("1. e4 e5", "moves"), ...drafts("1. d4 d5", "moves")]);
+    const [first, second] = await listCards(id);
+    await gradeCard(first, 10);
+    await gradeCard(second, 40);
+    renderReview(`?deck=${id}`, { scheduled: true });
+    await screen.findByText("Card 1 of 2");
+    // The card graded 40 days ago comes first: that is 1. d4.
+    expect(board()).toHaveAttribute("data-fen", expect.stringContaining("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w"));
+    await play({ from: "d2", to: "d4" });
+    expect(await gradeGroup()).toBeInTheDocument();
+  });
+
+  it("says nothing is due when every card is waiting, and when the next one comes", async () => {
+    const id = await makeDeck("Openings", drafts("1. e4 e5", "moves"));
+    const [card] = await listCards(id);
+    await gradeCard(card, 0);
+    renderReview(`?deck=${id}`, { scheduled: true });
+    expect(await screen.findByText("Nothing due in Openings.")).toBeInTheDocument();
+    expect(screen.getByText(/The next card is due (today|tomorrow|in \d+ days)\./)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Practise anyway" })).toHaveAttribute("href", `/review?deck=${id}&practice=1`);
+    expect(screen.queryByText(/Card 1 of/)).not.toBeInTheDocument();
+  });
+
+  it("doesn't bring new cards into a review, but says they are waiting", async () => {
+    const id = await makeDeck("Openings", drafts("1. e4 e5", "moves"));
+    renderReview(`?deck=${id}`, { scheduled: true });
+    expect(await screen.findByText("Nothing due in Openings.")).toBeInTheDocument();
+    expect(screen.getByText(/1 new card is ready to/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "learn" })).toHaveAttribute("href", `/review?deck=${id}&mode=learn`);
+  });
+
+  it("offers more after a session, and says when nothing is left", async () => {
+    const id = await dueDeck();
+    renderReview(`?deck=${id}`, { scheduled: true });
+    await screen.findByText("Card 1 of 1");
+    await play(E4);
+    await userEvent.click(await gradeButton("Good"));
+    await finished("You went through 1 card");
+    await click("Keep going");
+    expect(await screen.findByText("Nothing due in Openings.")).toBeInTheDocument();
   });
 });
 
-describe("Scheduled review: timing", () => {
+describe("Review: timing", () => {
   it("records how long the first move took, apart from the grade", async () => {
     let now = 1_000_000;
-    const id = await makeDeck("Openings", drafts("1. e4 e5", "moves"));
+    const id = await dueDeck();
     renderReview(`?deck=${id}`, { scheduled: true, clock: () => now });
     await screen.findByText("Card 1 of 1");
     now += 5000;
-    await play({ from: "e2", to: "e4" });
+    await play(E4);
     await userEvent.click(await gradeButton("Good"));
-    await screen.findByRole("heading", { name: "You went through 1 card" });
-    const [entry] = await db.reviews.toArray();
+    await finished("You went through 1 card");
+    const entry = await lastReview();
     expect(entry.timing).toMatchObject({ activeMs: 5000, idleMs: 0, hiddenMs: 0, firstMoveMs: 5000, flags: [], reliable: true });
     expect(entry.rating).toBe(3);
   });
 
   it("doesn't count a long idle stretch as thinking, and flags the time", async () => {
     let now = 1_000_000;
-    const id = await makeDeck("Openings", drafts("1. e4 e5", "moves"));
+    const id = await dueDeck();
     renderReview(`?deck=${id}`, { scheduled: true, clock: () => now });
     await screen.findByText("Card 1 of 1");
     now += 200_000;
-    await play({ from: "e2", to: "e4" });
+    await play(E4);
     expect(await screen.findByText(/The time wasn't counted: you were away or idle\./)).toBeInTheDocument();
     await userEvent.click(await gradeButton("Good"));
-    await screen.findByRole("heading", { name: "You went through 1 card" });
-    const [entry] = await db.reviews.toArray();
+    await finished("You went through 1 card");
+    const entry = await lastReview();
     expect(entry.timing).toMatchObject({ activeMs: 30_000, idleMs: 170_000, reliable: false, flags: ["idle"] });
     expect(entry.rating).toBe(3);
   });
 
   it("keeps time with the tab hidden out of the thinking time", async () => {
     let now = 1_000_000;
-    const id = await makeDeck("Openings", drafts("1. e4 e5", "moves"));
+    const id = await dueDeck();
     renderReview(`?deck=${id}`, { scheduled: true, clock: () => now });
     await screen.findByText("Card 1 of 1");
     const visibility = vi.spyOn(document, "visibilityState", "get");
@@ -628,176 +708,215 @@ describe("Scheduled review: timing", () => {
     visibility.mockReturnValue("visible");
     document.dispatchEvent(new Event("visibilitychange"));
     now += 3000;
-    await play({ from: "e2", to: "e4" });
+    await play(E4);
     await userEvent.click(await gradeButton("Good"));
-    await screen.findByRole("heading", { name: "You went through 1 card" });
+    await finished("You went through 1 card");
     visibility.mockRestore();
-    const [entry] = await db.reviews.toArray();
-    expect(entry.timing).toMatchObject({ activeMs: 5000, hiddenMs: 60_000, flags: ["hidden"], reliable: false });
-  });
-
-  it("starts the clock when you start playing, not while you study", async () => {
-    let now = 1_000_000;
-    const id = await makeDeck("Openings", drafts("1. e4 e5", "moves"));
-    renderReview(`?deck=${id}&mode=learn`, { scheduled: true, clock: () => now });
-    await screen.findByText("Card 1 of 1");
-    now += 90_000;
-    await click("Play it from memory");
-    now += 4000;
-    await play({ from: "e2", to: "e4" });
-    await userEvent.click(await gradeButton("Good"));
-    await screen.findByRole("heading", { name: "You went through 1 card" });
-    const [entry] = await db.reviews.toArray();
-    expect(entry.timing).toMatchObject({ activeMs: 4000, reliable: true });
+    expect((await lastReview()).timing).toMatchObject({ activeMs: 5000, hiddenMs: 60_000, flags: ["hidden"], reliable: false });
   });
 
   it("suggests Easy for a clearly quick answer once there is enough history, and still saves the grade pressed", async () => {
     await seedFastHistory(10);
     let now = 1_000_000;
-    const id = await makeDeck("Openings", drafts("1. e4 e5", "moves"));
+    const id = await dueDeck();
     renderReview(`?deck=${id}`, { scheduled: true, clock: () => now });
     await screen.findByText("Card 1 of 1");
     now += 1500;
-    await play({ from: "e2", to: "e4" });
+    await play(E4);
     expect(await screen.findByText(/Suggested: Easy\. Right first time, and quicker than usual\. Took 2 s\./)).toBeInTheDocument();
     await userEvent.click(await gradeButton("Good"));
-    await screen.findByRole("heading", { name: "You went through 1 card" });
-    const entry = (await db.reviews.toArray()).find((item) => item.id !== undefined && !item.id.startsWith("seed-"));
+    await finished("You went through 1 card");
+    const entry = (await db.reviews.orderBy("reviewedAt").toArray()).filter((item) => !item.id.startsWith("seed-")).at(-1);
     expect(entry).toMatchObject({ rating: 3, suggested: 4, nudged: true });
   });
 
   it("leaves the suggestion alone when response time is switched off", async () => {
     await seedFastHistory(10);
-    const { saveSettings } = await import("../../data/progress");
     await saveSettings({ timeSignal: false });
     let now = 1_000_000;
-    const id = await makeDeck("Openings", drafts("1. e4 e5", "moves"));
+    const id = await dueDeck();
     renderReview(`?deck=${id}`, { scheduled: true, clock: () => now });
     await screen.findByText("Card 1 of 1");
     now += 1500;
-    await play({ from: "e2", to: "e4" });
+    await play(E4);
     expect(await screen.findByText(/Suggested: Good\. Right first time\./)).toBeInTheDocument();
   });
 
   it("never lowers the suggestion for a slow answer", async () => {
     await seedFastHistory(10);
     let now = 1_000_000;
-    const id = await makeDeck("Openings", drafts("1. e4 e5", "moves"));
+    const id = await dueDeck();
     renderReview(`?deck=${id}`, { scheduled: true, clock: () => now });
     await screen.findByText("Card 1 of 1");
     now += 25_000;
-    await play({ from: "e2", to: "e4" });
+    await play(E4);
     expect(await screen.findByText(/Suggested: Good\. Right first time\. Took 25 s\./)).toBeInTheDocument();
   });
 });
 
-describe("Scheduled review: what comes up", () => {
-  it("brings back a card that is due, with intervals worked from its history", async () => {
+describe("Learn: new cards", () => {
+  it("shows the answer first, then asks for it, and schedules the card when it is played right", async () => {
     const id = await makeDeck("Openings", drafts("1. e4 e5", "moves"));
     const [card] = await listCards(id);
-    const { recordReview } = await import("../../data/progress");
-    await recordReview({
-      card,
-      grade: "good",
-      suggested: "good",
-      nudged: false,
-      outcome: "first-try",
-      tally: { mistakes: 0, hintUsed: false, revealed: false, played: 1 },
-      playerMoves: 1,
-      timing: { shownAt: 0, firstMoveAt: 1, completedAt: 2, elapsedMs: 2, activeMs: 2, idleMs: 0, hiddenMs: 0, firstMoveActiveMs: 1, flags: [], reliable: true },
-      desiredRetention: 0.9,
-      now: Date.now() - 30 * DAY,
-    });
-    renderReview(`?deck=${id}`, { scheduled: true });
+    renderReview(`?deck=${id}&mode=learn`, { scheduled: true });
     await screen.findByText("Card 1 of 1");
-    await play({ from: "e2", to: "e4" });
-    await userEvent.click(await gradeButton("Good"));
-    await screen.findByRole("heading", { name: "You went through 1 card" });
-    const reviews = await db.reviews.orderBy("reviewedAt").toArray();
-    expect(reviews).toHaveLength(2);
-    expect(reviews[1].before.due).toBe(reviews[0].after.due);
-    expect(reviews[1].elapsedDays).toBeGreaterThan(29);
-    expect((await db.schedules.get(card.id))?.reps).toBe(2);
+    expect(screen.getByRole("heading", { level: 1, name: "Learn: Openings" })).toBeInTheDocument();
+    expect(screen.getByText("Study this card")).toBeInTheDocument();
+    await click("Play it from memory");
+    await play(E4);
+    expect(await screen.findByText(/Learned\. It comes back in \d+ days?\./)).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "How did it go?" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Try this card again" })).not.toBeInTheDocument();
+    expect(await db.schedules.count()).toBe(0); // saved when you move on
+
+    await click("See results");
+    expect(await finished("You went through 1 card")).toBeInTheDocument();
+    expect(screen.getByText("new card learned")).toBeInTheDocument();
+    const entry = await lastReview();
+    expect(entry).toMatchObject({ cardId: card.id, rating: 3, suggested: 3, phase: "learn", nudged: false });
+    expect((await db.schedules.get(card.id))?.reps).toBe(1);
   });
 
-  it("says nothing is due when every card is waiting, and says when the next one comes", async () => {
+  it("brings a card that wasn't learned round again, and grades it Hard after one miss", async () => {
     const id = await makeDeck("Openings", drafts("1. e4 e5", "moves"));
-    const [card] = await listCards(id);
-    const { recordReview } = await import("../../data/progress");
-    await recordReview({
-      card,
-      grade: "good",
-      suggested: "good",
-      nudged: false,
-      outcome: "first-try",
-      tally: { mistakes: 0, hintUsed: false, revealed: false, played: 1 },
-      playerMoves: 1,
-      timing: { shownAt: 0, firstMoveAt: 1, completedAt: 2, elapsedMs: 2, activeMs: 2, idleMs: 0, hiddenMs: 0, firstMoveActiveMs: 1, flags: [], reliable: true },
-      desiredRetention: 0.9,
-    });
-    renderReview(`?deck=${id}`, { scheduled: true });
-    expect(await screen.findByText("Nothing due in Openings.")).toBeInTheDocument();
-    expect(screen.getByText(/The next card is due (today|tomorrow|in \d+ days)\./)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Practise anyway" })).toHaveAttribute("href", `/review?deck=${id}&practice=1`);
-    expect(screen.queryByText(/Card 1 of/)).not.toBeInTheDocument();
+    renderReview(`?deck=${id}&mode=learn`, { scheduled: true });
+    await screen.findByText("Card 1 of 1");
+    await click("Play it from memory");
+    expect(dropMove({ from: "d2", to: "d4" })).toBe(false);
+    await play(E4);
+    expect(await screen.findByText("Not there yet. It will come round again in a few cards.")).toBeInTheDocument();
+    expect(await db.schedules.count()).toBe(0);
+
+    await click("Next card");
+    expect(await screen.findByText("Card 2 of 2")).toBeInTheDocument();
+    expect(screen.queryByText("Study this card")).not.toBeInTheDocument(); // the second time you play it from memory
+    await play(E4);
+    expect(await screen.findByText(/Learned\./)).toBeInTheDocument();
+    await click("See results");
+    await finished("You went through 1 card");
+    expect(await lastReview()).toMatchObject({ rating: 2, phase: "learn" });
+    expect(await db.reviews.count()).toBe(1);
   });
 
-  it("Learn brings only cards you haven't seen", async () => {
-    const id = await makeDeck("Mixed", [...drafts("1. e4 e5", "moves"), ...drafts("1. d4 d5", "moves")]);
-    const [seen] = await listCards(id);
-    const { recordReview } = await import("../../data/progress");
-    await recordReview({
-      card: seen,
-      grade: "good",
-      suggested: "good",
-      nudged: false,
-      outcome: "first-try",
-      tally: { mistakes: 0, hintUsed: false, revealed: false, played: 1 },
-      playerMoves: 1,
-      timing: { shownAt: 0, firstMoveAt: 1, completedAt: 2, elapsedMs: 2, activeMs: 2, idleMs: 0, hiddenMs: 0, firstMoveActiveMs: 1, flags: [], reliable: true },
-      desiredRetention: 0.9,
-    });
+  it("puts the card back a few cards on, not straight away, when there are others", async () => {
+    const id = await makeDeck("Four", drafts("1. e4 e5 2. Nf3 Nc6 3. Bb5 a6", "moves", "w"));
+    const cards = await listCards(id);
+    expect(cards.length).toBe(3);
+    renderReview(`?deck=${id}&mode=learn`, { scheduled: true });
+    await screen.findByText("Card 1 of 3");
+    await click("Play it from memory");
+    dropMove({ from: "d2", to: "d4" });
+    await click("Show answer");
+    await screen.findByText("Not there yet. It will come round again in a few cards.");
+    await click("Next card");
+    expect(await screen.findByText("Card 2 of 4")).toBeInTheDocument();
+  });
+
+  it("brings in only as many new cards as the daily limit allows", async () => {
+    await saveSettings({ newPerDay: 5 });
+    const moves = "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 6. Re1 b5 7. Bb3 d6 8. c3 O-O";
+    const id = await makeDeck("Long", [...drafts(moves, "moves", "w"), ...drafts(moves, "moves", "b")]);
+    renderReview(`?deck=${id}&mode=learn`, { scheduled: true });
+    expect(await screen.findByText("Card 1 of 5")).toBeInTheDocument();
+  });
+
+  it("counts cards learned today against the limit, and says so when it is reached", async () => {
+    await saveSettings({ newPerDay: 5 });
+    const done = await makeDeck("Done", [
+      ...drafts("1. e4 e5 2. Nf3 Nc6 3. Bb5", "moves", "w"),
+      ...drafts("1. d4 d5 2. c4", "moves", "w"),
+    ]);
+    for (const card of await listCards(done)) await gradeCard(card, 0);
+    const id = await makeDeck("Fresh", drafts("1. e4 e5", "moves"));
+    expect(await db.reviews.count()).toBe(5);
+    renderReview(`?deck=${id}&mode=learn`, { scheduled: true });
+    expect(await screen.findByText("You've learned 5 new cards today.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Settings" })).toHaveAttribute("href", "/settings");
+  });
+
+  it("doesn't count a card learned yesterday", async () => {
+    await saveSettings({ newPerDay: 5 });
+    const done = await makeDeck("Done", drafts("1. e4 e5 2. Nf3 Nc6 3. Bb5", "moves", "w"));
+    for (const card of await listCards(done)) await gradeCard(card, 1);
+    const id = await makeDeck("Fresh", drafts("1. e4 e5", "moves"));
     renderReview(`?deck=${id}&mode=learn`, { scheduled: true });
     expect(await screen.findByText("Card 1 of 1")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 1, name: "Learn: Mixed" })).toBeInTheDocument();
   });
 
   it("says when there is nothing new to learn", async () => {
     const id = await makeDeck("Openings", drafts("1. e4 e5", "moves"));
     const [card] = await listCards(id);
-    const { recordReview } = await import("../../data/progress");
-    await recordReview({
-      card,
-      grade: "good",
-      suggested: "good",
-      nudged: false,
-      outcome: "first-try",
-      tally: { mistakes: 0, hintUsed: false, revealed: false, played: 1 },
-      playerMoves: 1,
-      timing: { shownAt: 0, firstMoveAt: 1, completedAt: 2, elapsedMs: 2, activeMs: 2, idleMs: 0, hiddenMs: 0, firstMoveActiveMs: 1, flags: [], reliable: true },
-      desiredRetention: 0.9,
-    });
+    await gradeCard(card, 5);
     renderReview(`?deck=${id}&mode=learn`, { scheduled: true });
     expect(await screen.findByText("No new cards in Openings.")).toBeInTheDocument();
   });
 
-  it("brings in a limited number of new cards at a time", async () => {
-    const moves = "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 6. Re1 b5 7. Bb3 d6 8. c3 O-O";
-    const long = [...drafts(moves, "moves", "w"), ...drafts(moves, "moves", "b")];
-    expect(long.length).toBeGreaterThan(10);
-    const id = await makeDeck("Long", long);
-    renderReview(`?deck=${id}`, { scheduled: true });
-    expect(await screen.findByText("Card 1 of 10")).toBeInTheDocument();
+  it("learning a card puts a new card in the Difficult moves deck only if it is a review that goes badly", async () => {
+    const id = await makeDeck("Openings", drafts("1. e4 e5", "moves"));
+    renderReview(`?deck=${id}&mode=learn`, { scheduled: true });
+    await screen.findByText("Card 1 of 1");
+    await click("Play it from memory");
+    dropMove({ from: "d2", to: "d4" });
+    dropMove({ from: "d2", to: "d3" });
+    await click("Show answer");
+    await screen.findByText("Not there yet. It will come round again in a few cards.");
+    expect((await listDecks()).filter((deck) => deck.theme === "difficult")).toHaveLength(0);
+  });
+});
+
+describe("Learning & review: every deck at once", () => {
+  it("goes through what is due first, then learns new cards", async () => {
+    const due = await dueDeck("Due deck", "1. e4 e5");
+    expect(due).toBeTruthy();
+    await makeDeck("New deck", drafts("1. d4 d5", "moves"));
+    renderReview("?all=1", { scheduled: true });
+    await screen.findByText("Card 1 of 2");
+    expect(screen.getByRole("heading", { level: 1, name: "Learning & review" })).toBeInTheDocument();
+    expect(screen.queryByText("Study this card")).not.toBeInTheDocument(); // due cards are reviewed
+    await play(E4);
+    await userEvent.click(await gradeButton("Good"));
+
+    expect(await screen.findByText("Card 2 of 2")).toBeInTheDocument();
+    expect(screen.getByText("Study this card")).toBeInTheDocument(); // new cards are learned
+    await click("Play it from memory");
+    await play({ from: "d2", to: "d4" });
+    await click("See results");
+    expect(await finished("You went through 2 cards")).toBeInTheDocument();
+    expect(await db.schedules.count()).toBe(2);
+    expect(screen.getByText("new card learned")).toBeInTheDocument();
   });
 
-  it("offers more after a session, and says when nothing is left", async () => {
+  it("holds new cards back once the daily limit is used up, but still brings what is due", async () => {
+    await saveSettings({ newPerDay: 5 });
+    await dueDeck("Due deck", "1. e4 e5");
+    const moves = "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6";
+    await makeDeck("New deck", [...drafts(moves, "moves", "w"), ...drafts(moves, "moves", "b")]);
+    renderReview("?all=1", { scheduled: true });
+    expect(await screen.findByText("Card 1 of 6")).toBeInTheDocument(); // one due, five new
+  });
+
+  it("says when there is nothing to do", async () => {
     const id = await makeDeck("Openings", drafts("1. e4 e5", "moves"));
-    renderReview(`?deck=${id}`, { scheduled: true });
-    await screen.findByText("Card 1 of 1");
-    await play({ from: "e2", to: "e4" });
-    await userEvent.click(await gradeButton("Good"));
-    await screen.findByRole("heading", { name: "You went through 1 card" });
-    await click("Review more");
-    expect(await screen.findByText("Nothing due in Openings.")).toBeInTheDocument();
+    const [card] = await listCards(id);
+    await gradeCard(card, 0);
+    renderReview("?all=1", { scheduled: true });
+    expect(await screen.findByText("Nothing is due, and there are no new cards.")).toBeInTheDocument();
+    expect(screen.getByText(/The next card is due/)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Practise anyway" })).not.toBeInTheDocument();
+  });
+
+  it("says when only the daily limit is in the way", async () => {
+    await saveSettings({ newPerDay: 5 });
+    const done = await makeDeck("Done", [...drafts("1. e4 e5 2. Nf3 Nc6 3. Bb5", "moves", "w"), ...drafts("1. d4 d5 2. c4", "moves", "w")]);
+    for (const card of await listCards(done)) await gradeCard(card, 0);
+    await makeDeck("Waiting", drafts("1. e4 e5", "moves"));
+    renderReview("?all=1", { scheduled: true });
+    expect(await screen.findByText("Nothing is due, and you've reached today's new-card limit.")).toBeInTheDocument();
+    expect(screen.getByText(/Your limit is 5 a day/)).toBeInTheDocument();
+  });
+
+  it("says when there are no cards at all", async () => {
+    renderReview("?all=1", { scheduled: true });
+    expect(await screen.findByText(/You have no cards yet/)).toBeInTheDocument();
   });
 });

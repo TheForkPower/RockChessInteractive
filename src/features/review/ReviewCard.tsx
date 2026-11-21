@@ -31,6 +31,16 @@ export type Grading = {
   error: string | null;
 };
 
+/** For a card being introduced: no grade is asked for. The card is learned when it is played right first time. */
+export type Learning = {
+  /** What happened and what comes next, in a sentence. */
+  note: string;
+  /** Moves on: schedules the card if it was learned, or brings it round again if it wasn't. */
+  onContinue: () => void;
+  saving: boolean;
+  error: string | null;
+};
+
 export type ReviewCardProps = {
   card: Card;
   /** "review" starts by asking the question. "learn" shows the answer first, then asks it. */
@@ -42,6 +52,8 @@ export type ReviewCardProps = {
   onFinished: (outcome: Outcome, tally: Tally, timing: Timing) => void;
   /** Asks for Again, Hard, Good or Easy after the answer. Leave out in practice, where nothing is scheduled. */
   grading?: Grading | null;
+  /** Used instead of `grading` while a new card is being learned. */
+  learning?: Learning | null;
   /** Reads the clock, in milliseconds. Tests pass their own. */
   clock?: () => number;
   /** A pause longer than this stops counting as thinking time. */
@@ -79,6 +91,7 @@ export function ReviewCard({
   isLast,
   onFinished,
   grading,
+  learning,
   clock = Date.now,
   idleMs = DEFAULT_IDLE_MS,
   onNext,
@@ -368,6 +381,17 @@ export function ReviewCard({
               </div>
             ) : null}
 
+            {phase === "back" && learning ? (
+              <div>
+                <p>{learning.note}</p>
+                {learning.error ? (
+                  <p role="alert" className="mt-3 font-semibold text-bad-edge">
+                    {learning.error}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
             <div className="flex flex-wrap gap-3">
               {phase === "study" ? (
                 <Button onClick={startPlaying}>
@@ -376,13 +400,15 @@ export function ReviewCard({
               ) : (
                 <>
                   {grading ? null : (
-                    <Button onClick={onNext}>
+                    <Button disabled={learning?.saving} onClick={learning ? learning.onContinue : onNext}>
                       {isLast ? "See results" : "Next card"}
                     </Button>
                   )}
-                  <Button variant="secondary" onClick={onAgain}>
-                    Try this card again
-                  </Button>
+                  {learning ? null : (
+                    <Button variant="secondary" onClick={onAgain}>
+                      Try this card again
+                    </Button>
+                  )}
                   {onMarkDifficult ? (
                     <Button variant="secondary" disabled={marked === "added" || marked === "already"} onClick={markDifficult}>
                       Mark as difficult

@@ -1,4 +1,4 @@
-import { ButtonLink } from "../../ui/Button";
+import { SessionStart } from "../review/SessionStart";
 import { PracticeCards } from "./PracticeCards";
 
 const steps = [
@@ -26,9 +26,7 @@ export function RecallPage() {
         </ul>
 
         <div className="mt-10">
-          <ButtonLink to="/decks" size="lg">
-            Start learning &amp; review
-          </ButtonLink>
+          <SessionStart />
         </div>
       </div>
 
