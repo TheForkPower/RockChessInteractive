@@ -21,16 +21,6 @@ beforeEach(async () => {
 });
 
 describe("Settings", () => {
-  it("thanks Martin Sedlák for the pieces and links to them", () => {
-    renderSettings();
-    expect(screen.getByRole("heading", { level: 2, name: "Credits" })).toBeInTheDocument();
-    expect(screen.getByText(/Thank you to Martin Sedlák/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Meridian on GitHub" })).toHaveAttribute(
-      "href",
-      "https://github.com/kmar/chess_svg_piece_sets/tree/main/meridian",
-    );
-  });
-
   it("shows the defaults to begin with", async () => {
     renderSettings();
     expect(await screen.findByRole("radio", { name: "90%" })).toHaveAttribute("aria-checked", "true");

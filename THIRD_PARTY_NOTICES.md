@@ -1,10 +1,14 @@
 # Third-party notices
 
-## Chess pieces
+## Chess pieces: needs a decision before the site goes public
 
-The pieces drawn on the board are **Meridian**, by Martin Sedlák, from [kmar/chess_svg_piece_sets](https://github.com/kmar/chess_svg_piece_sets/tree/main/meridian). The set is released into the public domain (CC0 1.0), and the design is taken from a 1952 German newspaper. No credit is required, and it is given anyway: on the Settings page and here.
+The pieces drawn on the board are `cm-chessboard/assets/pieces/standard.svg`. They are the Wikimedia "standard" set by Colin M. L. Burnett (Cburnett) and Rfc1394, licensed **CC BY-SA 3.0** (attribution, share-alike). The licence text is kept inside the SVG file, which ships with the app.
 
-`src/assets/pieces/meridian.svg` is built from the original SVG files by `scripts/build-pieces.mjs`, which puts the twelve pieces into one sprite sheet for the board.
+The share-alike condition applies to the artwork and to adaptations of it. Whether it reaches the rest of the site is a legal question that has not been settled here.
+
+The other set bundled with cm-chessboard (Staunty) is CC BY-NC-SA 4.0 and is **not** used, because NonCommercial would not suit a public site.
+
+Options before launch: keep these pieces and comply with CC BY-SA, replace them with a set under a permissive licence, or commission an original set.
 
 ## Code and fonts
 

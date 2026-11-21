@@ -6,8 +6,6 @@ import { IDLE_CHOICES, RETENTION_CHOICES, type Settings } from "../../domain/set
 import { Feedback } from "../../ui/Feedback";
 import { Segmented } from "../../ui/Segmented";
 
-const MERIDIAN_URL = "https://github.com/kmar/chess_svg_piece_sets/tree/main/meridian";
-
 const idleLabel = (seconds: number) => (seconds < 60 ? `${seconds} s` : `${seconds / 60} min`);
 
 function Section({ id, title, children }: { id: string; title: string; children: ReactNode }) {
@@ -87,19 +85,6 @@ export function SettingsPage() {
             onChange={(value) => void change({ idleSeconds: Number(value) })}
           />
         </Setting>
-      </Section>
-
-      <Section id="credits" title="Credits">
-        <p className="text-lg">
-          Thank you to Martin Sedlák, who drew the Meridian chess pieces and gave them to everyone by releasing them into the public domain.{" "}
-          <a href={MERIDIAN_URL} target="_blank" rel="noreferrer" className="font-semibold underline underline-offset-4">
-            Meridian on GitHub
-          </a>
-          .
-        </p>
-        <p className="text-ink-soft">
-          Also built on cm-chessboard for the board, chess.js for the rules, FSRS (through ts-fsrs) for scheduling, and Dexie for storage.
-        </p>
       </Section>
     </div>
   );
