@@ -1,11 +1,11 @@
-import { draftFromPosition, parseAlternatives, type CardDraft } from "../domain/cards";
+import { draftFromPosition, type CardDraft } from "../domain/cards";
 import { START_FEN } from "../domain/fen";
 import { mainlineFrom, moveLabel, parseMovetext, serializeFrom, type LineTree } from "../domain/pgn";
 import { IMMORTAL_GAME, OPERA_GAME } from "../domain/practiceCards";
 
 export const TUTORIAL_DECK_NAME = "Famous moves";
 export const TUTORIAL_DECK_DESCRIPTION =
-  "Ten of the most celebrated moves in chess history. Start here to see how cards work.";
+  "Nine of the most celebrated moves in chess history, from real games. A good first deck to try.";
 
 type Spec = {
   /** The whole game, or the part of it the card needs, as PGN movetext. */
@@ -23,7 +23,6 @@ type Spec = {
   hint: string;
   explanation: string;
   notes: string;
-  alsoAccept?: string;
   category: CardDraft["category"];
 };
 
@@ -31,24 +30,6 @@ const numbered = (moves: string[]) =>
   moves.map((move, index) => (index % 2 === 0 ? `${index / 2 + 1}. ${move}` : move)).join(" ");
 
 const SPECS: Spec[] = [
-  {
-    game:
-      "1. e4 {The king's pawn. It claims the centre and opens lines for the queen and the bishop.} 1... e5 " +
-      "(1... c5 {The Sicilian Defence, a sharper reply.} 2. Nf3) 2. Nf3 Nc6 3. Bb5 {The Ruy Lopez.}",
-    ply: 0,
-    answer: "e4",
-    alsoAccept: "d4",
-    kind: "move",
-    prompt: "White to move. Play a good first move.",
-    hint: "Take some space in the centre.",
-    explanation:
-      "Every card is a position and a question. You play the move you think is right, then the back shows the " +
-      "answer, a few words on why, and the moves that follow. Click any move there to jump the board to it. " +
-      "Moves in brackets are other ideas, shown as variations. This card accepts both e4 and d4, because a card " +
-      "can store more than one correct answer.",
-    notes: "Part of the Famous moves deck. You can edit or delete any card in it.",
-    category: "opening",
-  },
   {
     game:
       "1. e4 e5 2. Nf3 d6 3. Bc4 Bg4 4. Nc3 g6 5. Nxe5! {Ignores the pin on the knight.} 5... Bxd1 " +
@@ -204,8 +185,8 @@ const SPECS: Spec[] = [
   },
 ];
 
-// Oldest game first, after the welcome card.
-const ORDER = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+// Oldest game first.
+const ORDER = [0, 1, 2, 3, 4, 5, 6, 7, 8];
 
 function buildCard(spec: Spec): CardDraft {
   const parsed = parseMovetext(spec.game, START_FEN);
@@ -226,20 +207,12 @@ function buildCard(spec: Spec): CardDraft {
   if (!made.ok) throw new Error(`Tutorial deck: ${made.error}`);
   const { draft } = made;
 
-  let alternatives = draft.alternatives;
-  if (spec.alsoAccept) {
-    const parsedAlternatives = parseAlternatives(draft.fen, spec.alsoAccept, draft.answer);
-    if (!parsedAlternatives.ok) throw new Error(`Tutorial deck: ${parsedAlternatives.error}`);
-    alternatives = parsedAlternatives.moves;
-  }
-
   return {
     ...draft,
     prompt: spec.prompt,
     hint: spec.hint,
     explanation: spec.explanation,
     notes: spec.notes,
-    alternatives,
     tags: ["famous moves"],
     continuation: serializeFrom(tree, positionId, spec.showPlies ? { maxPlies: spec.showPlies } : {}),
   };

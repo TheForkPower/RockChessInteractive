@@ -15,12 +15,10 @@ function renderAt(path: string) {
 }
 
 describe("App shell", () => {
-  it("shows the home page with an honestly unavailable start button", () => {
+  it("shows the home page, with a start button that goes to the decks", () => {
     renderAt("/");
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Anki for chess positions.");
-    const start = screen.getByRole("button", { name: /start learning & review/i });
-    expect(start).toHaveAttribute("aria-disabled", "true");
-    expect(start).toHaveAccessibleDescription(/not built yet/i);
+    expect(screen.getByRole("link", { name: /start learning & review/i })).toHaveAttribute("href", "/decks");
   });
 
   it("offers every main destination in one navigation landmark", () => {

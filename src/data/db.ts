@@ -6,6 +6,8 @@ export type Deck = {
   name: string;
   /** A line or two about the deck, shown on its banner. */
   description?: string;
+  /** An id from the deck colour palette. Decks without one get a colour from their id. */
+  color?: string;
   /** "tutorial" marks the starter deck that comes with the app. */
   theme?: "tutorial";
   createdAt: number;

@@ -1,4 +1,5 @@
 import type { Card, CardDraft } from "../domain/cards";
+import { findColor, nextColor } from "../domain/deckColors";
 import { db, type Deck, type Source } from "./db";
 
 export type Result<T> = ({ ok: true } & T) | { ok: false; error: string };
@@ -19,7 +20,9 @@ export async function createDeck(name: string): Promise<Result<{ deck: Deck }>> 
   const taken = await db.decks.filter((deck) => deck.name.toLowerCase() === trimmed.toLowerCase()).first();
   if (taken) return { ok: false, error: `You already have a deck called "${taken.name}". Pick it from the list instead.` };
   const now = Date.now();
-  const deck: Deck = { id: newId(), name: trimmed, createdAt: now, updatedAt: now };
+  const all = await db.decks.toArray();
+  const color = nextColor(all.map((item) => item.color), all.length).id;
+  const deck: Deck = { id: newId(), name: trimmed, color, createdAt: now, updatedAt: now };
   await db.decks.add(deck);
   return { ok: true, deck };
 }
@@ -32,6 +35,16 @@ export async function renameDeck(id: string, name: string): Promise<Result<objec
     .first();
   if (taken) return { ok: false, error: `You already have a deck called "${taken.name}".` };
   await db.decks.update(id, { name: trimmed, updatedAt: Date.now() });
+  return { ok: true };
+}
+
+export async function getDeck(id: string): Promise<Deck | undefined> {
+  return db.decks.get(id);
+}
+
+export async function setDeckColor(id: string, color: string): Promise<Result<object>> {
+  if (!findColor(color)) return { ok: false, error: "That colour isn't one of the choices." };
+  await db.decks.update(id, { color, updatedAt: Date.now() });
   return { ok: true };
 }
 

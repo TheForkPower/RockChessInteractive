@@ -6,13 +6,9 @@ import { buildTutorialCards, tutorialAnswerLabels } from "./tutorialDeck";
 describe("tutorial deck", () => {
   const cards = buildTutorialCards();
 
-  it("builds ten cards", () => {
-    expect(cards).toHaveLength(10);
-  });
-
-  it("starts with the card that explains how cards work", () => {
-    expect(cards[0].prompt).toMatch(/good first move/i);
-    expect(cards[0].alternatives.length).toBe(1);
+  it("builds nine cards, none of them a welcome card", () => {
+    expect(cards).toHaveLength(9);
+    expect(cards.some((card) => /good first move/i.test(card.prompt))).toBe(false);
   });
 
   it("every answer is legal from the card's position", () => {
@@ -49,7 +45,6 @@ describe("tutorial deck", () => {
 
   it("labels the answers", () => {
     expect(tutorialAnswerLabels()).toEqual([
-      "1. e4",
       "5. Nxe5",
       "18. Bd6",
       "20. Rxe7+",

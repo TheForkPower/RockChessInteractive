@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { Button } from "../../ui/Button";
+import { ButtonLink } from "../../ui/Button";
 import { PracticeCards } from "./PracticeCards";
 
 const steps = [
@@ -19,11 +19,11 @@ export function HomePage() {
         </p>
 
         <div className="mt-10">
-          <Button size="lg" disabled aria-describedby="start-note">
+          <ButtonLink to="/decks" size="lg">
             Start learning &amp; review
-          </Button>
-          <p id="start-note" className="mt-4 text-sm text-ink-soft">
-            Not built yet. Reviewing arrives in milestone 3 and learning in milestone 5.
+          </ButtonLink>
+          <p className="mt-4 text-sm text-ink-soft">
+            Pick a deck, then press Review or Learn. Cards aren't scheduled yet: that arrives in milestone 4.
           </p>
         </div>
       </div>

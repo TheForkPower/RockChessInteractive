@@ -87,3 +87,11 @@ export const SkipEndIcon = (p: SVGProps<SVGSVGElement>) => (
     <path d="M18 6v12M6 6l8 6-8 6z" />
   </Icon>
 );
+
+export const DotsIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p} fill="currentColor" stroke="none">
+    <circle cx="12" cy="5" r="2" />
+    <circle cx="12" cy="12" r="2" />
+    <circle cx="12" cy="19" r="2" />
+  </Icon>
+);
