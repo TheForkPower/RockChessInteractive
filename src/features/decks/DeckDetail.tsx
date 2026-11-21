@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Link } from "react-router";
+import { markDifficult } from "../../data/difficult";
 import { deleteCard, deleteDeck, renameDeck, setDeckColor, STORAGE_ERROR, updateCard, type DeckSummary } from "../../data/repo";
 import { useCards, useDecks } from "../../data/hooks";
 import { answerText, CATEGORIES, cardToDraft, type Card, type CardDraft } from "../../domain/cards";
@@ -43,6 +44,7 @@ export function DeckDetail({ deck, action, onSettled, onGone }: Props) {
   const [name, setName] = useState(deck.name);
   const [renameError, setRenameError] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  const [marks, setMarks] = useState<Record<string, string>>({});
 
   async function guard(task: () => Promise<void>) {
     setProblem(null);
@@ -51,6 +53,16 @@ export function DeckDetail({ deck, action, onSettled, onGone }: Props) {
     } catch {
       setProblem(STORAGE_ERROR);
     }
+  }
+
+  async function addToDifficult(card: Card) {
+    await guard(async () => {
+      const result = await markDifficult(card);
+      setMarks((previous) => ({
+        ...previous,
+        [card.id]: result === "already" ? "Already in Difficult moves." : "Added to Difficult moves.",
+      }));
+    });
   }
 
   function toggle(next: Exclude<DeckAction, null>) {
@@ -113,6 +125,7 @@ export function DeckDetail({ deck, action, onSettled, onGone }: Props) {
         <Checker />
         <div className="relative z-10">
           {deck.theme === "tutorial" ? <p className="text-sm font-semibold text-white/90">Starter deck</p> : null}
+          {deck.theme === "difficult" ? <p className="text-sm font-semibold text-white/90">Fills itself as you practise</p> : null}
           <h1 className="text-4xl font-bold sm:text-5xl">{deck.name}</h1>
           {deck.description ? <p className="mt-3 max-w-prose text-lg">{deck.description}</p> : null}
           <p className="mt-3 text-white/90">{count}</p>
@@ -227,13 +240,20 @@ export function DeckDetail({ deck, action, onSettled, onGone }: Props) {
       ) : cards === undefined ? (
         <p className="mt-8 text-ink-soft">Loading cards…</p>
       ) : cards.length === 0 ? (
-        <p className="mt-8 text-ink-soft">
-          This deck has no cards. Make some on the{" "}
-          <Link to="/create" className="font-semibold underline underline-offset-4">
-            Create page
-          </Link>
-          .
-        </p>
+        deck.theme === "difficult" ? (
+          <p className="mt-8 max-w-xl text-ink-soft">
+            Nothing here yet. A card lands here when you need the answer or get it wrong twice. You can also add one from any
+            other deck with Mark as difficult.
+          </p>
+        ) : (
+          <p className="mt-8 text-ink-soft">
+            This deck has no cards. Make some on the{" "}
+            <Link to="/create" className="font-semibold underline underline-offset-4">
+              Create page
+            </Link>
+            .
+          </p>
+        )
       ) : (
         <ul
           className="mt-8 space-y-4 rounded-3xl border-2 p-4 sm:p-5"
@@ -253,6 +273,16 @@ export function DeckDetail({ deck, action, onSettled, onGone }: Props) {
                       {category}
                       {card.tags.length > 0 ? `, ${card.tags.join(", ")}` : ""}
                     </p>
+                    {deck.theme === "difficult" && card.struggles ? (
+                      <p className="mt-1 text-sm font-semibold text-ink-soft">
+                        Gave trouble {card.struggles === 1 ? "once" : `${card.struggles} times`}
+                      </p>
+                    ) : null}
+                    {marks[card.id] ? (
+                      <p role="status" className="mt-1 text-sm font-semibold text-ink-soft">
+                        {marks[card.id]}
+                      </p>
+                    ) : null}
                   </div>
                   <div className="flex flex-wrap gap-3">
                     <Button variant="secondary" aria-expanded={open} onClick={() => setOpenId(open ? null : card.id)}>
@@ -261,6 +291,11 @@ export function DeckDetail({ deck, action, onSettled, onGone }: Props) {
                     <Button variant="secondary" onClick={() => setEditing(card)}>
                       Edit
                     </Button>
+                    {deck.theme === "difficult" ? null : (
+                      <Button variant="secondary" onClick={() => addToDifficult(card)}>
+                        Mark as difficult
+                      </Button>
+                    )}
                     <Button variant="secondary" onClick={() => setConfirmCard(card.id)}>
                       Delete
                     </Button>

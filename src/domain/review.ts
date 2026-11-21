@@ -53,6 +53,11 @@ export function outcomeOf(tally: Tally): Outcome {
   return tally.mistakes > 0 || tally.hintUsed ? "with-help" : "first-try";
 }
 
+/** A card gave trouble if you needed the answer or got it wrong twice or more. One slip doesn't count. */
+export function isStruggle(tally: Tally): boolean {
+  return tally.revealed || tally.mistakes >= 2;
+}
+
 export const OUTCOME_LABELS: Record<Outcome, string> = {
   "first-try": "Right first time",
   "with-help": "Right, with a hint or a second try",
@@ -63,4 +68,19 @@ export const OUTCOME_LABELS: Record<Outcome, string> = {
 /** PGN movetext for the back of a card: its saved continuation, or just the answer if it has none. */
 export function backText(card: Card): string {
   return card.continuation.trim() !== "" ? card.continuation : answerText(card.fen, card.answer);
+}
+
+/**
+ * The question on the front of a card, split into the big line ("White to
+ * move") and the smaller line with the rest of what the author wrote.
+ */
+export function splitPrompt(card: Pick<Card, "prompt" | "fen">): { heading: string; detail: string } {
+  const text = card.prompt.trim();
+  const match = text.match(/^(white|black) to (?:move|play)\b[.:!]?\s*([\s\S]*)$/i);
+  if (match) {
+    const side = match[1].toLowerCase() === "white" ? "White" : "Black";
+    return { heading: `${side} to move`, detail: match[2].trim() };
+  }
+  const turn = card.fen.split(" ")[1] === "b" ? "Black" : "White";
+  return { heading: `${turn} to move`, detail: text };
 }

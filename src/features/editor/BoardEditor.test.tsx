@@ -1,6 +1,8 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+
+const AFTER_E4 = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1";
 import { START_FEN } from "../../domain/fen";
 import { BoardEditor } from "./BoardEditor";
 
@@ -127,5 +129,63 @@ describe("Board editor", () => {
     await userEvent.click(tool("Flip board"));
     expect(fenText()).toBe(before);
     expect(square("e1")).toHaveAccessibleName("e1, white king");
+  });
+
+  it("moves a piece by dragging it to another square", () => {
+    setup();
+    fireEvent.dragStart(square("e2"));
+    fireEvent.dragOver(square("e4"));
+    fireEvent.drop(square("e4"));
+    expect(square("e4")).toHaveAccessibleName("e4, white pawn");
+    expect(square("e2")).toHaveAccessibleName("e2, empty");
+  });
+
+  it("places a piece dragged from the palette", async () => {
+    setup();
+    await userEvent.click(tool("Clear board"));
+    fireEvent.dragStart(tool("black queen"));
+    fireEvent.drop(square("d5"));
+    expect(square("d5")).toHaveAccessibleName("d5, black queen");
+  });
+
+  it("takes a piece off when it is dragged away and let go outside the board", () => {
+    setup();
+    fireEvent.dragStart(square("a2"));
+    fireEvent.dragEnd(square("a2"), { dataTransfer: { dropEffect: "none" } });
+    expect(square("a2")).toHaveAccessibleName("a2, empty");
+  });
+
+  it("keeps a piece that was dropped on a square", () => {
+    setup();
+    fireEvent.dragStart(square("a2"));
+    fireEvent.drop(square("a4"));
+    fireEvent.dragEnd(square("a2"), { dataTransfer: { dropEffect: "move" } });
+    expect(square("a4")).toHaveAccessibleName("a4, white pawn");
+  });
+
+  it("loads a FEN onto the board", async () => {
+    setup();
+    await userEvent.type(screen.getByLabelText("Load a FEN"), AFTER_E4);
+    await userEvent.click(tool("Load FEN"));
+    expect(fenText()).toBe(AFTER_E4);
+    expect(square("e4")).toHaveAccessibleName("e4, white pawn");
+    expect(screen.getByLabelText("Load a FEN")).toHaveValue("");
+  });
+
+  it("explains a FEN that can't be loaded and leaves the board alone", async () => {
+    setup();
+    await userEvent.type(screen.getByLabelText("Load a FEN"), "nonsense");
+    await userEvent.click(tool("Load FEN"));
+    expect(screen.getByRole("alert")).toHaveTextContent(/valid FEN/);
+    expect(fenText()).toBe(START_FEN);
+  });
+
+  it("copies the FEN", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    setup();
+    await userEvent.click(tool("Copy FEN"));
+    expect(writeText).toHaveBeenCalledWith(START_FEN);
+    expect(await screen.findByText("Copied")).toBeInTheDocument();
   });
 });

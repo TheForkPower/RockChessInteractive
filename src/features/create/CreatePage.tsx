@@ -26,12 +26,13 @@ import { StepButtons } from "../../moves/StepButtons";
 import { Button } from "../../ui/Button";
 import { Feedback } from "../../ui/Feedback";
 import { PageHeader } from "../../ui/PageHeader";
-import { Segmented } from "../../ui/Segmented";
 import { CardEditor, type DeckChoice } from "../cards/CardEditor";
 import { DeckBuilder } from "./DeckBuilder";
 import { PgnPanel, PositionPanel } from "./SourcePanels";
 
 type Mode = "find" | "card" | "deck";
+type Method = "fen" | "pgn";
+type Stage = "choose" | "work";
 type Source = { title: string; pgn: string; headers: Record<string, string> } | null;
 type Notice = { title: string; body?: string; deckId: string } | null;
 
@@ -45,12 +46,14 @@ export function CreatePage() {
   const [currentId, setCurrentId] = useState(tree.rootId);
   const [orientation, setOrientation] = useState<BoardColor>("w");
   const [source, setSource] = useState<Source>(null);
-  const [tab, setTab] = useState<"position" | "pgn">("position");
+  const [stage, setStage] = useState<Stage>("choose");
+  const [method, setMethod] = useState<Method>("fen");
   const [mode, setMode] = useState<Mode>("find");
   const [cardDraft, setCardDraft] = useState<CardDraft | null>(null);
   const [cardError, setCardError] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
-  const [editingBoard, setEditingBoard] = useState(false);
+  /** Where the board editor was opened from, or null while it is closed. */
+  const [editingFrom, setEditingFrom] = useState<Stage | null>(null);
   const decks = useDecks();
 
   const current = getNode(tree, currentId);
@@ -254,20 +257,19 @@ export function CreatePage() {
           : "the position you set up"
         : `the position after ${moveLabel(tree, anchor.id)}`;
 
-  if (editingBoard) {
+  if (editingFrom) {
     return (
       <div>
-        <PageHeader title="Board editor">
-          Set up any position by hand. When it looks right, use it as the starting point for your cards.
-        </PageHeader>
+        <PageHeader title="Board editor" />
         <div className="mt-10">
           <BoardEditor
             initialFen={current.fen}
-            onCancel={() => setEditingBoard(false)}
+            onCancel={() => setEditingFrom(null)}
             onUse={(fen) => {
               setFen(fen);
-              setTab("position");
-              setEditingBoard(false);
+              setMethod("fen");
+              setStage("work");
+              setEditingFrom(null);
             }}
           />
         </div>
@@ -275,24 +277,76 @@ export function CreatePage() {
     );
   }
 
+  const savedNotice = notice ? (
+    <div className="mt-8 max-w-2xl">
+      <Feedback tone="good" title={notice.title}>
+        {notice.body ? <p>{notice.body}</p> : null}
+        <p className="mt-2">
+          <Link to={`/decks?deck=${notice.deckId}`} className="font-semibold underline underline-offset-4">
+            View the deck
+          </Link>
+        </p>
+      </Feedback>
+    </div>
+  ) : null;
+
+  if (stage === "choose") {
+    const ways: { title: string; body: string; onChoose: () => void }[] = [
+      {
+        title: "Paste a FEN",
+        body: "Start from one position, then play or type the moves.",
+        onChoose: () => {
+          setMethod("fen");
+          setStage("work");
+        },
+      },
+      {
+        title: "Paste or upload a PGN",
+        body: "A game, a repertoire or a study, with its variations.",
+        onChoose: () => {
+          setMethod("pgn");
+          setStage("work");
+        },
+      },
+      {
+        title: "Use the board editor",
+        body: "Place the pieces yourself.",
+        onChoose: () => setEditingFrom("choose"),
+      },
+    ];
+    return (
+      <div>
+        <PageHeader title="Create cards" />
+        {savedNotice}
+        <h2 className="mt-10 font-display text-xl font-bold">How do you want to start?</h2>
+        <ul className="mt-4 grid max-w-4xl gap-4 sm:grid-cols-3">
+          {ways.map((way) => (
+            <li key={way.title}>
+              <button
+                type="button"
+                onClick={way.onChoose}
+                className="panel flex h-full w-full flex-col items-start gap-2 p-6 text-left transition-colors hover:bg-line/30"
+              >
+                <span className="font-display text-lg font-bold">{way.title}</span>
+                <span className="text-ink-soft">{way.body}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
+
   return (
     <div>
-      <PageHeader title="Create cards">
-        Paste a PGN, set up a position with a FEN, or play the moves on the board. Then make one card, or a deck from the whole line.
-      </PageHeader>
+      <PageHeader title="Create cards" />
+      <div className="mt-4">
+        <Button variant="secondary" onClick={() => setStage("choose")}>
+          Choose another way to start
+        </Button>
+      </div>
 
-      {notice ? (
-        <div className="mt-8 max-w-2xl">
-          <Feedback tone="good" title={notice.title}>
-            {notice.body ? <p>{notice.body}</p> : null}
-            <p className="mt-2">
-              <Link to={`/decks?deck=${notice.deckId}`} className="font-semibold underline underline-offset-4">
-                View the deck
-              </Link>
-            </p>
-          </Feedback>
-        </div>
-      ) : null}
+      {savedNotice}
 
       <div className="mt-10 grid gap-10 lg:grid-cols-[minmax(0,30rem)_minmax(0,1fr)]">
         <div className="lg:sticky lg:top-6 lg:self-start">{board}</div>
@@ -300,30 +354,19 @@ export function CreatePage() {
         <div className="space-y-10">
           <section aria-labelledby="source-heading">
             <h2 id="source-heading" className="sr-only">
-              Where the position comes from
+              {method === "fen" ? "Position and moves" : "Load a game"}
             </h2>
-            <Segmented
-              label="Where the position comes from"
-              value={tab}
-              onChange={setTab}
-              options={[
-                { value: "position", label: "FEN and moves" },
-                { value: "pgn", label: "Paste a PGN" },
-              ]}
-            />
-            <div className="mt-6">
-              {tab === "position" ? (
-                <PositionPanel
-                  fen={current.fen}
-                  onSetFen={setFen}
-                  onStart={startAgain}
-                  onOpenEditor={() => setEditingBoard(true)}
-                  onAddMoves={addTypedMoves}
-                />
-              ) : (
-                <PgnPanel parse={parseForPanel} onLoad={loadGame} />
-              )}
-            </div>
+            {method === "fen" ? (
+              <PositionPanel
+                fen={current.fen}
+                onSetFen={setFen}
+                onStart={startAgain}
+                onOpenEditor={() => setEditingFrom("work")}
+                onAddMoves={addTypedMoves}
+              />
+            ) : (
+              <PgnPanel parse={parseForPanel} onLoad={loadGame} />
+            )}
           </section>
 
           <section aria-labelledby="moves-heading">

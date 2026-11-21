@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link, Navigate, useSearchParams } from "react-router";
+import { markDifficult, recordStruggle } from "../../data/difficult";
 import { getDeck, listCards, STORAGE_ERROR } from "../../data/repo";
 import type { Deck } from "../../data/db";
 import type { Card } from "../../domain/cards";
 import { colorOf } from "../../domain/deckColors";
-import { OUTCOME_LABELS, type Outcome } from "../../domain/review";
+import { isStruggle, OUTCOME_LABELS, type Outcome, type Tally } from "../../domain/review";
 import { Button, ButtonLink } from "../../ui/Button";
 import { Feedback } from "../../ui/Feedback";
 import { ChevronLeftIcon } from "../../ui/Icons";
@@ -37,9 +38,12 @@ function Session({ deck, cards, mode, replyDelay }: SessionProps) {
   const done = Object.keys(results).length;
   const card = cards[index];
 
-  function record(id: string, outcome: Outcome) {
+  function record(item: Card, outcome: Outcome, tally: Tally) {
     // The first go at a card is the one that counts. Trying it again doesn't change it.
-    setResults((previous) => (previous[id] ? previous : { ...previous, [id]: outcome }));
+    if (results[item.id]) return;
+    setResults((previous) => (previous[item.id] ? previous : { ...previous, [item.id]: outcome }));
+    // Trouble on the first go puts the card in the Difficult moves deck. Failing to save it mustn't interrupt the session.
+    if (isStruggle(tally)) recordStruggle(item).catch(() => {});
   }
 
   function next() {
@@ -105,7 +109,8 @@ function Session({ deck, cards, mode, replyDelay }: SessionProps) {
           </ButtonLink>
         </div>
         <p className="mt-6 text-sm text-ink-soft">
-          Results aren't saved or scheduled yet. That arrives with spaced repetition in milestone 4.
+          Results aren't scheduled yet. That arrives with spaced repetition in milestone 4. Cards you struggled with are copied
+          to Difficult moves.
         </p>
       </div>
     );
@@ -132,7 +137,8 @@ function Session({ deck, cards, mode, replyDelay }: SessionProps) {
           mode={run > 0 ? "review" : mode}
           replyDelay={replyDelay}
           isLast={index + 1 >= cards.length}
-          onFinished={(outcome) => record(card.id, outcome)}
+          onFinished={(outcome, tally) => record(card, outcome, tally)}
+          onMarkDifficult={deck.theme === "difficult" ? undefined : () => markDifficult(card)}
           onNext={next}
           onAgain={() => setRun((value) => value + 1)}
         />
@@ -140,7 +146,7 @@ function Session({ deck, cards, mode, replyDelay }: SessionProps) {
 
       <p className="mt-10 max-w-2xl text-sm text-ink-soft">
         Cards check your move against the answer saved on the card, not an engine, so another good move can still be
-        marked wrong. Results aren't saved or scheduled yet.
+        marked wrong. Results aren't scheduled yet.
       </p>
     </div>
   );

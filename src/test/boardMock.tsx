@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useLayoutEffect } from "react";
 import { act } from "@testing-library/react";
 import type { BoardProps } from "../board/Board";
 import type { MoveInput } from "../domain/game";
@@ -7,7 +7,9 @@ import type { MoveInput } from "../domain/game";
 export const boardProps: { current: BoardProps | null } = { current: null };
 
 export function Board(props: BoardProps) {
-  useEffect(() => {
+  // A layout effect, so the props are recorded in the same commit that puts the board on screen. A passive
+  // effect can run a moment later, and a test that has just seen the board would drop a move too early.
+  useLayoutEffect(() => {
     boardProps.current = props;
   });
   return (

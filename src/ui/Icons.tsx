@@ -23,6 +23,14 @@ export const HomeIcon = (p: SVGProps<SVGSVGElement>) => (
   </Icon>
 );
 
+export const RecallIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M4 12a8 8 0 1 0 2.6-5.9" />
+    <path d="M4 4v4h4" />
+    <path d="M12 8v4l2.5 2" />
+  </Icon>
+);
+
 export const DecksIcon = (p: SVGProps<SVGSVGElement>) => (
   <Icon {...p}>
     <rect x="4" y="8" width="16" height="12" rx="3" />

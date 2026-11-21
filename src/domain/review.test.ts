@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildTutorialCards } from "../data/tutorialDeck";
 import type { Card, CardMove } from "./cards";
-import { backText, judgeMove, outcomeOf, planCard } from "./review";
+import { backText, judgeMove, outcomeOf, planCard, splitPrompt } from "./review";
 
 const base = buildTutorialCards();
 const card = (index: number, patch: Partial<Card> = {}): Card => ({
@@ -89,5 +89,26 @@ describe("the back of a card", () => {
 
   it("falls back to the answer when there's no continuation", () => {
     expect(backText(card(0, { continuation: "  " }))).toBe("5. Nxe5");
+  });
+});
+
+describe("splitting the question", () => {
+  const fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+  it("puts the side to move on its own and keeps the rest as detail", () => {
+    expect(splitPrompt({ fen, prompt: "White to move. Both your rooks are attacked. Find the quiet move." })).toEqual({
+      heading: "White to move",
+      detail: "Both your rooks are attacked. Find the quiet move.",
+    });
+  });
+
+  it("has no detail when the question is only the side to move", () => {
+    expect(splitPrompt({ fen, prompt: "Black to move." })).toEqual({ heading: "Black to move", detail: "" });
+  });
+
+  it("adds the side to move when the author didn't write it", () => {
+    expect(splitPrompt({ fen: fen.replace(" w ", " b "), prompt: "Find the best reply." })).toEqual({
+      heading: "Black to move",
+      detail: "Find the best reply.",
+    });
   });
 });

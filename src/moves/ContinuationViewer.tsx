@@ -12,15 +12,33 @@ type Props = {
   orientation?: "w" | "b";
   /** Shown while there is no continuation. */
   emptyText?: string;
+  /**
+   * To let the page decide which move is shown (so moves elsewhere on the page
+   * can drive the board), pass both of these. Otherwise the viewer keeps its own.
+   */
+  selectedId?: string | null;
+  onSelect?: (id: string) => void;
+  /** Hide the written-out moves under the arrows, when the page lists them elsewhere. */
+  showMoves?: boolean;
 };
 
 /**
  * A board with the continuation written beside it. Click any move, or use the
  * arrow keys, to step through it. Variations can be followed too.
  */
-export function ContinuationViewer({ fen, continuation, orientation = "w", emptyText = "No continuation on this card." }: Props) {
+export function ContinuationViewer({
+  fen,
+  continuation,
+  orientation = "w",
+  emptyText = "No continuation on this card.",
+  selectedId: controlledId,
+  onSelect,
+  showMoves = true,
+}: Props) {
   const parsed = useMemo(() => parseMovetext(continuation, fen), [continuation, fen]);
-  const [picked, setPicked] = useState<string | null>(null);
+  const [ownPick, setOwnPick] = useState<string | null>(null);
+  const picked = onSelect ? (controlledId ?? null) : ownPick;
+  const setPicked = (id: string) => (onSelect ? onSelect(id) : setOwnPick(id));
 
   const tree = parsed.ok ? parsed.tree : null;
   const selectedId = tree && picked && tree.nodes[picked] ? picked : (tree?.rootId ?? "");
@@ -70,12 +88,12 @@ export function ContinuationViewer({ fen, continuation, orientation = "w", empty
         />
       </div>
 
-      <div className="mt-4">
+      <div className={showMoves || !parsed.ok ? "mt-4" : ""}>
         {!parsed.ok ? (
           <p role="alert" className="text-bad-edge">
             The continuation has a problem: {parsed.error}
           </p>
-        ) : hasMoves && tree ? (
+        ) : !showMoves ? null : hasMoves && tree ? (
           <div className="max-h-72 overflow-y-auto rounded-2xl border-2 border-line bg-surface p-4">
             <MoveTree tree={tree} selectedId={selectedId === tree.rootId ? null : selectedId} onSelect={setPicked} label="Continuation" />
           </div>

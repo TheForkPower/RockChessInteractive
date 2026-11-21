@@ -61,7 +61,7 @@ export function PlayLinks({ deckId, name, cardCount, describedBy }: PlayLinksPro
 export function DeckTile({ deck }: { deck: DeckSummary }) {
   const color = colorOf(deck);
   const cards = deck.cardCount === 1 ? "1 card" : `${deck.cardCount} cards`;
-  const label = deck.theme === "tutorial" ? `Starter deck, ${cards}` : cards;
+  const label = deck.theme === "tutorial" ? `Starter deck, ${cards}` : deck.theme === "difficult" ? `Fills itself, ${cards}` : cards;
   const note = `empty-${deck.id}`;
   const open = `/decks?deck=${deck.id}`;
   return (
@@ -70,7 +70,7 @@ export function DeckTile({ deck }: { deck: DeckSummary }) {
       style={{ background: gradientOf(color) }}
     >
       <Checker />
-      <div className="relative z-10 flex items-start justify-between gap-3">
+      <div className="relative z-20 flex items-start justify-between gap-3">
         <p className="pt-2 text-sm font-semibold text-white/90">{label}</p>
         <Menu
           tone="dark"

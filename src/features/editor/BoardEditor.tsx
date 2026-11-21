@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from "react";
+import { useId, useMemo, useRef, useState, type DragEvent } from "react";
 import piecesUrl from "cm-chessboard/assets/pieces/standard.svg?url";
 import { parseFen } from "../../domain/fen";
 import {
@@ -20,6 +20,7 @@ import {
   type Setup,
 } from "../../domain/boardSetup";
 import { Button } from "../../ui/Button";
+import { Field, fieldClass } from "../../ui/Field";
 import { Segmented } from "../../ui/Segmented";
 
 type Tool = { kind: "move" } | { kind: "erase" } | { kind: "piece"; piece: Piece };
@@ -55,6 +56,11 @@ export function BoardEditor({ initialFen, onUse, onCancel }: Props) {
   const [tool, setTool] = useState<Tool>({ kind: "move" });
   const [picked, setPicked] = useState<number | null>(null);
   const [flipped, setFlipped] = useState(false);
+  const [loadText, setLoadText] = useState("");
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [copied, setCopied] = useState<"yes" | "no" | null>(null);
+  /** What is being dragged: a piece already on the board, or one from the palette. */
+  const dragging = useRef<{ from: number } | { piece: Piece } | null>(null);
   const ids = useId();
 
   const fen = useMemo(() => setupToFen(setup), [setup]);
@@ -85,6 +91,54 @@ export function BoardEditor({ initialFen, onUse, onCancel }: Props) {
       setPicked(null);
     } else {
       setPicked(index);
+    }
+  }
+
+  function startDrag(event: DragEvent, what: { from: number } | { piece: Piece }) {
+    dragging.current = what;
+    event.dataTransfer?.setData("text/plain", "piece");
+    if (event.dataTransfer) event.dataTransfer.effectAllowed = "copyMove";
+  }
+
+  function dropOn(index: number) {
+    const what = dragging.current;
+    dragging.current = null;
+    if (!what) return;
+    if ("piece" in what) {
+      change({ squares: placePiece(setup.squares, index, what.piece) });
+    } else if (what.from !== index) {
+      change({ squares: movePiece(setup.squares, what.from, index) });
+    }
+    setPicked(null);
+  }
+
+  /** A piece dragged off the board and let go is taken off it. */
+  function endDrag(from: number, event: DragEvent) {
+    const wasDropped = dragging.current === null;
+    dragging.current = null;
+    if (!wasDropped && event.dataTransfer?.dropEffect === "none") {
+      change({ squares: removePiece(setup.squares, from) });
+      setPicked(null);
+    }
+  }
+
+  function loadFen() {
+    const parsed = parseFen(loadText);
+    if (!parsed.ok) return setLoadError(parsed.error);
+    const next = fenToSetup(parsed.fen);
+    if (!next) return setLoadError("That position couldn't be loaded.");
+    setLoadError(null);
+    setLoadText("");
+    setSetup(next);
+    setPicked(null);
+  }
+
+  async function copyFen() {
+    try {
+      await navigator.clipboard.writeText(fen);
+      setCopied("yes");
+    } catch {
+      setCopied("no");
     }
   }
 
@@ -122,6 +176,14 @@ export function BoardEditor({ initialFen, onUse, onCancel }: Props) {
                   aria-label={`${name}, ${piece ? pieceName(piece) : "empty"}`}
                   aria-pressed={picked === index ? true : undefined}
                   onClick={() => clickSquare(index)}
+                  draggable={piece ? true : undefined}
+                  onDragStart={piece ? (event) => startDrag(event, { from: index }) : undefined}
+                  onDragEnd={piece ? (event) => endDrag(index, event) : undefined}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    dropOn(index);
+                  }}
                   className={[
                     "relative block h-full w-full p-0 leading-none",
                     dark ? "bg-[#9fb0d2]" : "bg-[#edf0f7]",
@@ -163,8 +225,8 @@ export function BoardEditor({ initialFen, onUse, onCancel }: Props) {
             Pieces
           </h2>
           <p className="mt-1 text-sm text-ink-soft">
-            Pick a piece, then click squares to place it. Click the same piece again to take it off. Or choose Move pieces:
-            click a piece, then click the square it goes to.
+            Drag a piece from here onto the board, or pick one and click squares to place it. Drag a piece off the board to
+            take it away. Or choose Move pieces: click a piece, then click the square it goes to.
           </p>
           <div className="mt-4 space-y-3" role="group" aria-label="Piece palette">
             {COLOURS.map((color) => (
@@ -180,6 +242,8 @@ export function BoardEditor({ initialFen, onUse, onCancel }: Props) {
                       aria-label={pieceName(piece)}
                       aria-pressed={active}
                       title={pieceName(piece)}
+                      draggable
+                      onDragStart={(event) => startDrag(event, { piece })}
                       onClick={() => chooseTool(next)}
                       className={[
                         "h-14 w-14 rounded-xl border-2 p-1 transition-colors",
@@ -290,6 +354,34 @@ export function BoardEditor({ initialFen, onUse, onCancel }: Props) {
           </div>
         </section>
 
+        <section aria-label="Load a position from a FEN">
+          <form
+            noValidate
+            onSubmit={(event) => {
+              event.preventDefault();
+              loadFen();
+            }}
+          >
+            <Field id={`${ids}-load-text`} label="Load a FEN" error={loadError}>
+              {(aria) => (
+                <input
+                  {...aria}
+                  type="text"
+                  spellCheck={false}
+                  className={`${fieldClass} font-mono text-sm`}
+                  value={loadText}
+                  onChange={(event) => setLoadText(event.target.value)}
+                />
+              )}
+            </Field>
+            <div className="mt-3">
+              <Button type="submit" variant="secondary">
+                Load FEN
+              </Button>
+            </div>
+          </form>
+        </section>
+
         <section aria-labelledby={`${ids}-fen`} className="panel p-6">
           <h2 id={`${ids}-fen`} className="font-display text-xl font-bold">
             The position
@@ -315,6 +407,20 @@ export function BoardEditor({ initialFen, onUse, onCancel }: Props) {
               {checked.error}
             </p>
           )}
+          <div className="mt-5 flex flex-wrap gap-3">
+            <Button variant="secondary" onClick={copyFen}>
+              Copy FEN
+            </Button>
+            {copied === "yes" ? (
+              <span role="status" className="self-center font-semibold text-good-edge">
+                Copied
+              </span>
+            ) : copied === "no" ? (
+              <span role="status" className="self-center text-ink-soft">
+                Couldn't copy. Select the text above instead.
+              </span>
+            ) : null}
+          </div>
           <div className="mt-5 flex flex-wrap gap-3">
             <Button
               disabled={!checked.ok}

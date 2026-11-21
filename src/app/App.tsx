@@ -4,6 +4,7 @@ import { DecksPage } from "../features/decks/DecksPage";
 import { DesignPage } from "../features/design/DesignPage";
 import { HomePage } from "../features/home/HomePage";
 import { NotFoundPage } from "../features/home/NotFoundPage";
+import { RecallPage } from "../features/home/RecallPage";
 import { ReviewPage } from "../features/review/ReviewPage";
 import { SettingsPage } from "../features/settings/SettingsPage";
 import { Shell } from "./Shell";
@@ -13,6 +14,7 @@ export function App() {
     <Routes>
       <Route element={<Shell />}>
         <Route index element={<HomePage />} />
+        <Route path="recall" element={<RecallPage />} />
         <Route path="decks" element={<DecksPage />} />
         <Route path="review" element={<ReviewPage />} />
         <Route path="create" element={<CreatePage />} />

@@ -1,7 +1,8 @@
 import { useEffect, type ComponentType, type SVGProps } from "react";
 import { Link, NavLink, Outlet } from "react-router";
+import { installDifficultDeckOnce } from "../data/difficult";
 import { installTutorialDeckOnce } from "../data/seed";
-import { CreateIcon, DecksIcon, HomeIcon, SettingsIcon } from "../ui/Icons";
+import { CreateIcon, DecksIcon, HomeIcon, RecallIcon, SettingsIcon } from "../ui/Icons";
 import { Wordmark } from "../ui/Logo";
 
 type NavItem = {
@@ -13,6 +14,7 @@ type NavItem = {
 
 const items: NavItem[] = [
   { to: "/", label: "Home", Icon: HomeIcon, end: true },
+  { to: "/recall", label: "Recall", Icon: RecallIcon },
   { to: "/decks", label: "Decks", Icon: DecksIcon },
   { to: "/create", label: "Create", Icon: CreateIcon },
   { to: "/settings", label: "Settings", Icon: SettingsIcon },
@@ -26,7 +28,10 @@ export function Shell() {
   // First visit: put the starter deck in place. If storage is blocked there is
   // nothing to add it to, and the pages already explain that.
   useEffect(() => {
-    installTutorialDeckOnce().catch(() => {});
+    installTutorialDeckOnce()
+      .catch(() => {})
+      .then(() => installDifficultDeckOnce())
+      .catch(() => {});
   }, []);
 
   return (
@@ -40,7 +45,7 @@ export function Shell() {
 
       <header className="border-b-2 border-line bg-paper">
         <div className="mx-auto flex h-16 w-full max-w-5xl items-center justify-between px-5 sm:px-8">
-          <Link to="/" aria-label="RockChess Recall, home" className="rounded-xl">
+          <Link to="/" aria-label="RockChess, home" className="rounded-xl">
             <Wordmark />
           </Link>
 

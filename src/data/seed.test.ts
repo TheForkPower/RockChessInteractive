@@ -105,4 +105,31 @@ describe("starter deck", () => {
     await installTutorialDeckOnce();
     expect(await listCards(deck.id)).toHaveLength(10);
   });
+
+  it("swaps the first, too-obvious hints for the new ones, once, and leaves an edited hint alone", async () => {
+    await installTutorialDeckOnce();
+    const [deck] = await listDecks();
+    const cards = await listCards(deck.id);
+    const legal = cards.find((card) => card.answer[0].san === "Nxe5")!;
+    const immortal = cards.find((card) => card.answer[0].san === "Bd6")!;
+    const fresh = legal.hint;
+    // As an earlier version left them: one with the old hint, one the person had changed.
+    await db.cards.update(legal.id, { hint: "Don't move the queen. Take something on e5." });
+    await db.cards.update(immortal.id, { hint: "My own hint." });
+    await db.meta.delete("tutorialHintsRefreshed");
+    await installTutorialDeckOnce();
+    const after = await listCards(deck.id);
+    expect(after.find((card) => card.id === legal.id)!.hint).toBe(fresh);
+    expect(after.find((card) => card.id === immortal.id)!.hint).toBe("My own hint.");
+    expect(fresh).not.toMatch(/e5|queen on|Take something/);
+  });
+
+  it("gives hints that don't name the move or the square", async () => {
+    await installTutorialDeckOnce();
+    const [deck] = await listDecks();
+    for (const card of await listCards(deck.id)) {
+      const target = card.answer[0].san.replace(/[+#]/g, "").replace(/^[KQRBN]x?/, "").replace("x", "");
+      expect(card.hint, card.prompt).not.toContain(target);
+    }
+  });
 });

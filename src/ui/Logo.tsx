@@ -12,9 +12,7 @@ export function Wordmark() {
   return (
     <span className="flex items-center gap-2.5 font-display text-xl font-bold tracking-tight">
       <LogoMark />
-      <span>
-        RockChess <span className="font-medium text-ink-soft">Recall</span>
-      </span>
+      <span>RockChess</span>
     </span>
   );
 }

@@ -63,6 +63,10 @@ export type Card = {
   sourceId?: string;
   /** Half-moves into the source game where this card's position sits. */
   sourcePly?: number;
+  /** On a card in the Difficult moves deck: the card it was copied from. */
+  sourceCardId?: string;
+  /** On a card in the Difficult moves deck: how many times it has given you trouble. */
+  struggles?: number;
   createdAt: number;
   updatedAt: number;
 };

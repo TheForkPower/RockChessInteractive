@@ -8,8 +8,8 @@ export type Deck = {
   description?: string;
   /** An id from the deck colour palette. Decks without one get a colour from their id. */
   color?: string;
-  /** "tutorial" marks the starter deck that comes with the app. */
-  theme?: "tutorial";
+  /** "tutorial" marks the starter deck that comes with the app. "difficult" marks the deck that fills itself with the cards you struggle with. */
+  theme?: "tutorial" | "difficult";
   createdAt: number;
   updatedAt: number;
 };

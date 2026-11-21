@@ -39,7 +39,7 @@ const SPECS: Spec[] = [
     answer: "Nxe5",
     kind: "move",
     prompt: "White to move. Black's bishop on g4 pins your knight on f3 to the queen. Find the surprise.",
-    hint: "Don't move the queen. Take something on e5.",
+    hint: "The pin looks painful. Does the queen actually have to be saved?",
     explanation:
       "5. Nxe5! If Black takes the queen, 5... Bxd1 6. Bxf7+ Ke7 7. Nd5# is checkmate: the king is shut in by " +
       "its own pieces and the knights cover the rest. If Black takes the knight, 5... dxe5 6. Qxg4 wins the bishop.",
@@ -52,7 +52,7 @@ const SPECS: Spec[] = [
     answer: "Bd6",
     kind: "move",
     prompt: "White to move. Both your rooks are attacked. Find the quiet move.",
-    hint: "It isn't a capture and it isn't check. Look at the dark squares around the black king.",
+    hint: "Not every strong move is forcing. Where is Black's king short of squares?",
     explanation:
       "18. Bd6! The bishop takes the dark squares around the black king and keeps the attack going while both " +
       "rooks hang. It ends 18... Bxg1 19. e5 Qxa1+ 20. Ke2 Na6 21. Nxg7+ Kd8 22. Qf6+ Nxf6 23. Be7#, after White " +
@@ -71,7 +71,7 @@ const SPECS: Spec[] = [
     kind: "line",
     lineLength: 9,
     prompt: "White to move. Two sacrifices lead to mate. Find the first, then play on.",
-    hint: "A rook takes on e7 with check. Black has to recapture.",
+    hint: "Black's king has almost no room. What would you pay to open it up?",
     explanation:
       "20. Rxe7+! Nxe7 21. Qxd7+! Kxd7 22. Bf5+ is a double check, from the bishop and from the rook behind it. " +
       "After 22... Ke8 23. Bd7+ Kf8 24. Bxe7# the bishops finish the job, with White a rook and the queen down.",
@@ -85,7 +85,7 @@ const SPECS: Spec[] = [
     kind: "line",
     lineLength: 3,
     prompt: "White to move. A queen sacrifice forces mate in two. Find it.",
-    hint: "Give up the queen on b8 to drag the knight away from d7.",
+    hint: "One black piece is holding everything together. How could you remove it?",
     explanation:
       "16. Qb8+! Nxb8 17. Rd8#. The sacrifice pulls the knight away from d7, and the rook mates with the bishop " +
       "on g5 guarding d8.",
@@ -102,7 +102,7 @@ const SPECS: Spec[] = [
     answer: "Bxh7+",
     kind: "move",
     prompt: "White to move. Black's king looks safe behind its pawns. Break in on h7.",
-    hint: "The bishop takes on h7 with check. There is more to come on g7.",
+    hint: "Black's king has few friends nearby. Which of your pieces already look at that corner?",
     explanation:
       "15. Bxh7+! Kxh7 16. Qxh5+ Kg8 17. Bxg7! Kxg7 18. Qg4+ Kh7 19. Rf3 brings a rook across to h3. The two " +
       "bishops strip away the king's cover, then the queen and rook finish the job, and 22. Qd7 attacks both " +
@@ -118,7 +118,7 @@ const SPECS: Spec[] = [
     answer: "Qd8+",
     kind: "move",
     prompt: "White to move. Sacrifice the queen: it ends in mate.",
-    hint: "Look down the d-file.",
+    hint: "Count what is aimed at the black king's file, then ask what it would take to use it.",
     explanation:
       "9. Qd8+! Kxd8 10. Bg5+ drags the king out. After 10... Kc7, 11. Bd8# is mate, and 10... Ke8 loses to " +
       "11. Rd8#. The rook on d1 and the bishop do the work.",
@@ -138,7 +138,7 @@ const SPECS: Spec[] = [
     showPlies: 17,
     kind: "move",
     prompt: "Black to move. Your queen is attacked. Find the quiet move that ignores it.",
-    hint: "Attack the bishop on c4. Capturing it would come with check.",
+    hint: "Your queen is attacked, but a threat of your own can be worth more than a queen.",
     explanation:
       "17... Be6!! offers the queen. After 18. Bxb6 Bxc4+ 19. Kg1 Ne2+ 20. Kf1 Nxd4+ the knight keeps checking, " +
       "and Black ends up with a rook, two bishops and a pawn for the queen, and a winning attack.",
@@ -155,7 +155,7 @@ const SPECS: Spec[] = [
     answer: "Nxe6",
     kind: "move",
     prompt: "White to move. Black has just played h6, asking your knight on g5 what it is doing. Find the sacrifice.",
-    hint: "Take the pawn on e6 and let the king's cover fall apart.",
+    hint: "Black's king is still in the middle. What keeps it comfortable there?",
     explanation:
       "8. Nxe6! Qe7 9. O-O fxe6 10. Bg6+ Kd8 11. Bf4 leaves Black's king stranded in the middle. Deep Blue won " +
       "this game, the last of the 1997 match, and Kasparov resigned after 19. c4.",
@@ -176,7 +176,7 @@ const SPECS: Spec[] = [
     showPlies: 9,
     kind: "move",
     prompt: "White to move. Material is level. Find the rook sacrifice.",
-    hint: "Take on d4 with the rook. The king on a7 is about to be pulled into the open.",
+    hint: "Black's king looks safe where it is. What would make it leave?",
     explanation:
       "24. Rxd4!! cxd4 25. Re7+ Kb6 26. Qxd4+ Kxa5 27. b4+ Ka4 28. Qc3 and the black king is hunted across the " +
       "board. Kasparov's attack in this game is often ranked among the finest ever played.",

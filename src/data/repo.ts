@@ -67,6 +67,11 @@ export async function listDecks(): Promise<DeckSummary[]> {
 
 export async function listCards(deckId: string): Promise<Card[]> {
   const cards = await db.cards.where("deckId").equals(deckId).toArray();
+  const deck = await db.decks.get(deckId);
+  // The Difficult moves deck puts the cards that give you the most trouble first.
+  if (deck?.theme === "difficult") {
+    return cards.sort((a, b) => (b.struggles ?? 0) - (a.struggles ?? 0) || b.updatedAt - a.updatedAt);
+  }
   return cards.sort((a, b) => a.createdAt - b.createdAt || (a.sourcePly ?? 0) - (b.sourcePly ?? 0));
 }
 

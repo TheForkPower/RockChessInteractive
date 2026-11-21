@@ -19,12 +19,16 @@ const pick = (name: string) => userEvent.click(screen.getByRole("radio", { name 
 /** Typing { and ( through userEvent is awkward, so set the text directly. */
 const setText = (label: string, value: string) => fireEvent.change(screen.getByLabelText(label), { target: { value } });
 
-function renderPage() {
-  return render(
+/** The page opens on a choice of how to start. Most tests go straight on to one of the ways. */
+function renderPage(way: "fen" | "pgn" | "choose" = "fen") {
+  const result = render(
     <MemoryRouter>
       <CreatePage />
     </MemoryRouter>,
   );
+  if (way === "fen") fireEvent.click(screen.getByRole("button", { name: /^Paste a FEN/ }));
+  if (way === "pgn") fireEvent.click(screen.getByRole("button", { name: /^Paste or upload a PGN/ }));
+  return result;
 }
 
 beforeEach(async () => {
@@ -166,8 +170,7 @@ describe("Create page: PGN", () => {
 1. e4 e5 2. Nf3 (2. f4 {the King's Gambit} exf4) 2... d6 1-0`;
 
   it("reads a PGN and keeps its variations", async () => {
-    renderPage();
-    await pick("Paste a PGN");
+    renderPage("pgn");
     setText("PGN", pgn);
     await click("Read PGN");
     expect(screen.getByRole("status")).toHaveTextContent("Loaded Morphy v Duke");
@@ -179,16 +182,14 @@ describe("Create page: PGN", () => {
   });
 
   it("explains a PGN with an illegal move", async () => {
-    renderPage();
-    await pick("Paste a PGN");
+    renderPage("pgn");
     setText("PGN", "1. e4 e4");
     await click("Read PGN");
     expect(screen.getByRole("alert")).toHaveTextContent("isn't a legal move");
   });
 
   it("lets you pick between several games", async () => {
-    renderPage();
-    await pick("Paste a PGN");
+    renderPage("pgn");
     setText("PGN", `${pgn}\n\n[Event "Second"]\n\n1. d4 d5 *`);
     await click("Read PGN");
     await userEvent.selectOptions(screen.getByLabelText("Game"), "1");
@@ -197,8 +198,7 @@ describe("Create page: PGN", () => {
   });
 
   it("opens a .pgn file", async () => {
-    renderPage();
-    await pick("Paste a PGN");
+    renderPage("pgn");
     const file = new File([pgn], "morphy.pgn", { type: "text/plain" });
     await userEvent.upload(screen.getByLabelText("PGN file"), file);
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Loaded Morphy v Duke"));
@@ -253,8 +253,7 @@ describe("Create page: making a card", () => {
   });
 
   it("records the PGN it came from", async () => {
-    renderPage();
-    await pick("Paste a PGN");
+    renderPage("pgn");
     setText("PGN", '[Event "Test"]\n[White "A"]\n[Black "B"]\n\n1. e4 e5 *');
     await click("Read PGN");
     await click("Make a card");
@@ -370,8 +369,8 @@ describe("Create page: making a deck", () => {
 
 describe("Create page: the board editor", () => {
   it("opens the editor, and a position set up there becomes the position to build from", async () => {
-    renderPage();
-    await click("Set up the board by hand");
+    renderPage("choose");
+    await click(/^Use the board editor/);
     expect(screen.getByRole("heading", { level: 1, name: "Board editor" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /^e2,/ }));
     await userEvent.click(screen.getByRole("button", { name: /^e4,/ }));
@@ -383,11 +382,50 @@ describe("Create page: the board editor", () => {
   });
 
   it("cancelling leaves the position as it was", async () => {
-    renderPage();
-    await click("Set up the board by hand");
+    renderPage("choose");
+    await click(/^Use the board editor/);
     await userEvent.click(screen.getByRole("button", { name: /^e2,/ }));
     await userEvent.click(screen.getByRole("button", { name: /^e4,/ }));
     await click("Cancel");
+    expect(screen.getByRole("heading", { level: 2, name: "How do you want to start?" })).toBeInTheDocument();
+    await click(/^Paste a FEN/);
     expect(board()).toHaveAttribute("data-fen", START_FEN);
+  });
+
+  it("can also be opened from the position panel, and cancelling comes back to it", async () => {
+    renderPage();
+    await click("Set up the board by hand");
+    await click("Cancel");
+    expect(fenField()).toBeInTheDocument();
+  });
+});
+
+describe("Create page: choosing how to start", () => {
+  it("shows the three ways first and nothing else", () => {
+    renderPage("choose");
+    expect(screen.getByRole("heading", { level: 1, name: "Create cards" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Paste a FEN/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Paste or upload a PGN/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Use the board editor/ })).toBeInTheDocument();
+    expect(screen.queryByTestId("board")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("FEN")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Then make one card, or a deck/)).not.toBeInTheDocument();
+  });
+
+  it("shows only the PGN box after choosing a PGN", async () => {
+    renderPage("choose");
+    await click(/^Paste or upload a PGN/);
+    expect(screen.getByLabelText("PGN")).toBeInTheDocument();
+    expect(screen.queryByLabelText("FEN")).not.toBeInTheDocument();
+    expect(board()).toBeInTheDocument();
+  });
+
+  it("goes back to the choice and keeps the position you had", async () => {
+    renderPage();
+    dropMove({ from: "e2", to: "e4" });
+    await click("Choose another way to start");
+    expect(screen.queryByTestId("board")).not.toBeInTheDocument();
+    await click(/^Paste or upload a PGN/);
+    expect(board()).toHaveAttribute("data-fen", AFTER_E4);
   });
 });

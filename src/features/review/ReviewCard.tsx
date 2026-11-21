@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Board } from "../../board/Board";
 import { answerText, CATEGORIES, sideName, type Card } from "../../domain/cards";
+import type { DifficultResult } from "../../data/difficult";
 import { Game, type MoveInput } from "../../domain/game";
-import { backText, judgeMove, outcomeOf, planCard, type Outcome, type Tally } from "../../domain/review";
+import { mainlineFrom, moveLabel, parseMovetext } from "../../domain/pgn";
+import { answerNodeIds, linkMoves } from "../../domain/richText";
+import { backText, judgeMove, outcomeOf, planCard, splitPrompt, type Outcome, type Tally } from "../../domain/review";
 import { ContinuationViewer } from "../../moves/ContinuationViewer";
+import { LinkedText, MoveButton } from "../../moves/LinkedText";
+import { MoveTree } from "../../moves/MoveTree";
 import { Button } from "../../ui/Button";
 import { Feedback } from "../../ui/Feedback";
 
@@ -18,9 +23,11 @@ export type ReviewCardProps = {
   replyDelay: number;
   isLast: boolean;
   /** Called once, when the card ends, with how it went. */
-  onFinished: (outcome: Outcome) => void;
+  onFinished: (outcome: Outcome, tally: Tally) => void;
   onNext: () => void;
   onAgain: () => void;
+  /** Adds this card to the Difficult moves deck. Leave out where the card can't be added (it is already there). */
+  onMarkDifficult?: () => Promise<DifficultResult>;
 };
 
 function resultMessage(outcome: Outcome, played: number, alternative: string | null): Message {
@@ -43,9 +50,25 @@ function resultMessage(outcome: Outcome, played: number, alternative: string | n
 }
 
 /** One card: the question on the board, then the answer, explanation and moves. */
-export function ReviewCard({ card, mode, replyDelay, isLast, onFinished, onNext, onAgain }: ReviewCardProps) {
+export function ReviewCard({ card, mode, replyDelay, isLast, onFinished, onNext, onAgain, onMarkDifficult }: ReviewCardProps) {
   const plan = useMemo(() => planCard(card), [card]);
   const opponentFirst = plan[0]?.mover === "opponent";
+
+  const tree = useMemo(() => {
+    const parsed = parseMovetext(backText(card), card.fen);
+    return parsed.ok ? parsed.tree : null;
+  }, [card]);
+  const [shownId, setShownId] = useState<string | null>(null);
+  const [marked, setMarked] = useState<"idle" | "added" | "already" | "failed">("idle");
+
+  async function markDifficult() {
+    if (!onMarkDifficult) return;
+    try {
+      setMarked((await onMarkDifficult()) === "already" ? "already" : "added");
+    } catch {
+      setMarked("failed");
+    }
+  }
 
   const [game] = useState(() => new Game(card.fen));
   const [fen, setFen] = useState(card.fen);
@@ -75,7 +98,7 @@ export function ReviewCard({ card, mode, replyDelay, isLast, onFinished, onNext,
     setHintShown(false);
     setPhase("back");
     setMessage(resultMessage(outcome, tally.current.played, alternative));
-    onFinished(outcome);
+    onFinished(outcome, { ...tally.current });
   }
 
   function playOpponent(index: number) {
@@ -162,6 +185,32 @@ export function ReviewCard({ card, mode, replyDelay, isLast, onFinished, onNext,
   const canAct = phase === "play" && !waiting;
   const category = CATEGORIES.find((option) => option.value === card.category)?.label ?? card.category;
   const answer = answerText(card.fen, card.answer);
+  const { heading, detail } = splitPrompt(card);
+  const answerIds = answerNodeIds(tree, card.answer);
+  const explanation = useMemo(() => linkMoves(card.explanation, tree), [card.explanation, tree]);
+  const hasMoves = Boolean(tree && mainlineFrom(tree, tree.rootId).length > 0);
+
+  /** The moves of the answer, each one pressable. Falls back to plain text if the saved continuation doesn't start with them. */
+  function answerMoves() {
+    if (!tree || !answerIds) return <span className="font-mono">{answer}</span>;
+    return (
+      <span className="text-lg">
+        {answerIds.map((id, index) => {
+          const node = tree.nodes[id];
+          const before = tree.nodes[node.parentId as string].fen.split(" ");
+          const prefix = before[1] === "w" ? `${before[5]}.` : index === 0 ? `${before[5]}...` : "";
+          return (
+            <span key={id} className="whitespace-nowrap">
+              {prefix ? <span className="text-ink-soft">{prefix} </span> : null}
+              <MoveButton selected={id === shownId} label={moveLabel(tree, id)} onClick={() => setShownId(id)}>
+                {node.san ?? ""}
+              </MoveButton>{" "}
+            </span>
+          );
+        })}
+      </span>
+    );
+  }
 
   return (
     <div className="grid gap-8 lg:grid-cols-[minmax(0,34rem)_minmax(0,1fr)] lg:items-start">
@@ -176,7 +225,14 @@ export function ReviewCard({ card, mode, replyDelay, isLast, onFinished, onNext,
             label={`Chessboard. ${card.prompt}`}
           />
         ) : (
-          <ContinuationViewer fen={card.fen} continuation={backText(card)} orientation={card.side} />
+          <ContinuationViewer
+            fen={card.fen}
+            continuation={backText(card)}
+            orientation={card.side}
+            selectedId={shownId}
+            onSelect={setShownId}
+            showMoves={false}
+          />
         )}
       </div>
 
@@ -184,9 +240,10 @@ export function ReviewCard({ card, mode, replyDelay, isLast, onFinished, onNext,
         <p className="text-sm font-semibold text-ink-soft">
           {category}. You play {sideName(card.side)}.
         </p>
-        <h2 className="mt-2 text-3xl font-bold">{card.prompt}</h2>
+        <h2 className="mt-1 text-4xl font-bold sm:text-5xl">{heading}</h2>
+        {detail ? <p className="mt-2 text-lg text-ink-soft">{detail}</p> : null}
 
-        <div className="mt-5 min-h-24" aria-live="polite">
+        <div className="mt-5 min-h-20" aria-live="polite">
           {message ? (
             <Feedback tone={message.tone} title={message.title}>
               {message.body}
@@ -219,49 +276,8 @@ export function ReviewCard({ card, mode, replyDelay, isLast, onFinished, onNext,
               </p>
             ) : null}
           </div>
-        ) : null}
-
-        {phase !== "play" ? (
-          <div className="mt-6 space-y-5">
-            {phase === "back" ? (
-              <>
-                <section>
-                  <h3 className="text-sm font-semibold text-ink-soft">{card.kind === "move" ? "Answer" : "Answer line"}</h3>
-                  <p className="mt-1 font-mono text-lg">{answer}</p>
-                  {card.alternatives.length > 0 ? (
-                    <p className="mt-1 text-sm text-ink-soft">
-                      Also accepted: <span className="font-mono">{card.alternatives.map((move) => move.san).join(", ")}</span>
-                    </p>
-                  ) : null}
-                </section>
-                {card.explanation ? (
-                  <section>
-                    <h3 className="text-sm font-semibold text-ink-soft">Why</h3>
-                    <p className="mt-1 whitespace-pre-wrap">{card.explanation}</p>
-                  </section>
-                ) : null}
-                {card.notes ? (
-                  <section>
-                    <h3 className="text-sm font-semibold text-ink-soft">Notes</h3>
-                    <p className="mt-1 whitespace-pre-wrap">{card.notes}</p>
-                  </section>
-                ) : null}
-              </>
-            ) : (
-              <>
-                <section>
-                  <h3 className="text-sm font-semibold text-ink-soft">{card.kind === "move" ? "The move" : "The line"}</h3>
-                  <p className="mt-1 font-mono text-lg">{answer}</p>
-                </section>
-                {card.explanation ? (
-                  <section>
-                    <h3 className="text-sm font-semibold text-ink-soft">Why</h3>
-                    <p className="mt-1 whitespace-pre-wrap">{card.explanation}</p>
-                  </section>
-                ) : null}
-              </>
-            )}
-
+        ) : (
+          <div className="mt-5 space-y-6">
             <div className="flex flex-wrap gap-3">
               {phase === "study" ? (
                 <Button size="lg" onClick={startPlaying}>
@@ -275,11 +291,71 @@ export function ReviewCard({ card, mode, replyDelay, isLast, onFinished, onNext,
                   <Button variant="secondary" size="lg" onClick={onAgain}>
                     Try this card again
                   </Button>
+                  {onMarkDifficult ? (
+                    <Button variant="secondary" size="lg" disabled={marked === "added" || marked === "already"} onClick={markDifficult}>
+                      Mark as difficult
+                    </Button>
+                  ) : null}
                 </>
               )}
             </div>
+            {marked !== "idle" ? (
+              <p role="status" className="text-sm font-semibold text-ink-soft">
+                {marked === "added"
+                  ? "Added to Difficult moves."
+                  : marked === "already"
+                    ? "Already in Difficult moves."
+                    : "That didn't save. Storage may be blocked in this browser."}
+              </p>
+            ) : null}
+
+            <section aria-labelledby="answer-heading">
+              <h3 id="answer-heading" className="text-sm font-semibold text-ink-soft">
+                {phase === "study" ? (card.kind === "move" ? "The move" : "The line") : card.kind === "move" ? "Answer" : "Answer line"}
+              </h3>
+              <p className="mt-1">{answerMoves()}</p>
+              {phase === "back" && card.alternatives.length > 0 ? (
+                <p className="mt-1 text-sm text-ink-soft">
+                  Also accepted: <span className="font-mono">{card.alternatives.map((move) => move.san).join(", ")}</span>
+                </p>
+              ) : null}
+            </section>
+
+            {card.explanation ? (
+              <section aria-labelledby="why-heading">
+                <h3 id="why-heading" className="text-sm font-semibold text-ink-soft">
+                  Why
+                </h3>
+                <div className="mt-1">
+                  <LinkedText pieces={explanation} selectedId={shownId} onSelect={setShownId} />
+                </div>
+              </section>
+            ) : null}
+
+            {phase === "back" && card.notes ? (
+              <section>
+                <h3 className="text-sm font-semibold text-ink-soft">Notes</h3>
+                <p className="mt-1 whitespace-pre-wrap">{card.notes}</p>
+              </section>
+            ) : null}
+
+            {hasMoves && tree ? (
+              <section aria-labelledby="moves-heading">
+                <h3 id="moves-heading" className="text-sm font-semibold text-ink-soft">
+                  All the moves
+                </h3>
+                <div className="mt-2 max-h-64 overflow-y-auto rounded-2xl border-2 border-line bg-surface p-4">
+                  <MoveTree
+                    tree={tree}
+                    selectedId={shownId && shownId !== tree.rootId ? shownId : null}
+                    onSelect={setShownId}
+                    label="All the moves"
+                  />
+                </div>
+              </section>
+            ) : null}
           </div>
-        ) : null}
+        )}
       </div>
     </div>
   );

@@ -25,13 +25,32 @@ describe("deck colours", () => {
     expect(colorOf({ id: "abc" })).toBe(colorOf({ id: "abc" }));
   });
 
+  it("shows the starter deck as ember and the Difficult moves deck as orange even with no colour saved", () => {
+    expect(colorOf({ id: "a", theme: "tutorial" }).id).toBe("ember");
+    expect(colorOf({ id: "a", theme: "difficult" }).id).toBe("orange");
+    expect(colorOf({ id: "a", theme: "tutorial", color: "teal" }).id).toBe("teal");
+  });
+
   it("ignores a colour that isn't in the palette", () => {
     expect(DECK_COLORS).toContain(colorOf({ id: "abc", color: "chartreuse" }));
   });
 
   it("picks an unused colour for a new deck, and cycles once all are used", () => {
-    expect(nextColor(["ember", "forest"], 2).id).toBe("violet");
-    expect(nextColor(DECK_COLORS.map((color) => color.id), 3).id).toBe(DECK_COLORS[3].id);
+    expect(nextColor(["forest", "violet"], 2).id).toBe("rose");
+    const pool = DECK_COLORS.filter((color) => color.id !== "ember" && color.id !== "orange");
+    expect(nextColor(DECK_COLORS.map((color) => color.id), 3).id).toBe(pool[3].id);
+  });
+
+  it("keeps ember and orange for the special decks", () => {
+    const picked = new Set<string>();
+    const used: string[] = [];
+    for (let i = 0; i < 8; i += 1) {
+      const color = nextColor(used, i).id;
+      picked.add(color);
+      used.push(color);
+    }
+    expect(picked.has("ember")).toBe(false);
+    expect(picked.has("orange")).toBe(false);
   });
 
   it("measures contrast", () => {

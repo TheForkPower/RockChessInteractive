@@ -14,6 +14,7 @@ export type DeckColor = {
 
 export const DECK_COLORS: DeckColor[] = [
   { id: "ember", label: "Ember", from: "#c2480b", to: "#a3241a", wash: "#fdf0e6", line: "#f0c9ac" },
+  { id: "orange", label: "Orange", from: "#c25400", to: "#9c3b00", wash: "#fdf1e4", line: "#f2cba5" },
   { id: "forest", label: "Forest", from: "#1f7a4d", to: "#145a38", wash: "#e6f4ec", line: "#b4dcc4" },
   { id: "violet", label: "Violet", from: "#7140b8", to: "#4d2a8a", wash: "#f0eaf9", line: "#d1c1ea" },
   { id: "rose", label: "Rose", from: "#bf3466", to: "#8f2150", wash: "#fbe9f0", line: "#efbdd2" },
@@ -35,14 +36,23 @@ function hash(text: string): number {
   return value;
 }
 
-/** The colour a deck shows: the one it was given, or a steady pick based on its id. */
-export function colorOf(deck: { id: string; color?: string }): DeckColor {
-  return findColor(deck.color) ?? DECK_COLORS[hash(deck.id) % DECK_COLORS.length];
+/**
+ * The colour a deck shows: the one it was given, the one its kind always has
+ * (the starter deck is ember, the Difficult moves deck is orange), or a steady
+ * pick based on its id.
+ */
+export function colorOf(deck: { id: string; color?: string; theme?: string }): DeckColor {
+  const byKind = deck.theme === "tutorial" ? "ember" : deck.theme === "difficult" ? "orange" : undefined;
+  return findColor(deck.color) ?? findColor(byKind) ?? DECK_COLORS[hash(deck.id) % DECK_COLORS.length];
 }
+
+/** Colours kept for the starter deck and the Difficult moves deck, so new decks don't look like them. */
+const RESERVED = ["ember", "orange"];
 
 /** The first colour no other deck is using, so new decks look different from each other. */
 export function nextColor(used: (string | undefined)[], seed: number): DeckColor {
-  return DECK_COLORS.find((color) => !used.includes(color.id)) ?? DECK_COLORS[seed % DECK_COLORS.length];
+  const pool = DECK_COLORS.filter((color) => !RESERVED.includes(color.id));
+  return pool.find((color) => !used.includes(color.id)) ?? pool[seed % pool.length];
 }
 
 export const gradientOf = (color: DeckColor) => `linear-gradient(135deg, ${color.from}, ${color.to})`;

@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "../../data/db";
 import { addCards, createDeck, listCards, listDecks } from "../../data/repo";
+import { installDifficultDeckOnce, markDifficult, recordStruggle } from "../../data/difficult";
 import { installTutorialDeckOnce } from "../../data/seed";
 import { buildDeckCards } from "../../domain/cards";
 import { START_FEN } from "../../domain/fen";
@@ -354,5 +355,68 @@ describe("Decks page: the starter deck", () => {
     renderPage();
     await screen.findByRole("heading", { name: "Famous moves" });
     expect(screen.queryByRole("button", { name: "Add the Famous moves deck" })).not.toBeInTheDocument();
+  });
+});
+
+describe("Decks page: Difficult moves", () => {
+  const difficult = async () => (await listDecks()).find((deck) => deck.theme === "difficult")!;
+
+  it("shows as an orange tile that says it fills itself, even when empty", async () => {
+    await installDifficultDeckOnce();
+    renderPage();
+    await screen.findByRole("heading", { name: "Difficult moves" });
+    expect(tile("Difficult moves").getByText("Fills itself, 0 cards")).toBeInTheDocument();
+    const item = screen.getAllByRole("listitem").find((li) => li.querySelector("h2")?.textContent === "Difficult moves")!;
+    expect(item.getAttribute("style")).toContain("rgb(194, 84, 0)");
+  });
+
+  it("explains how it fills when it is empty", async () => {
+    await installDifficultDeckOnce();
+    const deck = await difficult();
+    renderPage(`/decks?deck=${deck.id}`);
+    await screen.findByRole("heading", { level: 1, name: "Difficult moves" });
+    expect(screen.getByText("Fills itself as you practise")).toBeInTheDocument();
+    expect(await screen.findByText(/Nothing here yet/)).toBeInTheDocument();
+  });
+
+  it("lets you add a card from another deck, and says so", async () => {
+    const id = await seed("Ruy Lopez", "1. e4 e5 2. Nf3 Nc6");
+    await openDeck(id, "Ruy Lopez");
+    const [first] = screen.getAllByRole("button", { name: "Mark as difficult" });
+    await userEvent.click(first);
+    expect(await screen.findByText("Added to Difficult moves.")).toBeInTheDocument();
+    await userEvent.click(first);
+    expect(await screen.findByText("Already in Difficult moves.")).toBeInTheDocument();
+    expect(await listCards((await difficult()).id)).toHaveLength(1);
+  });
+
+  it("lists the trickiest card first, counts the trouble, and doesn't offer to mark its own cards", async () => {
+    const id = await seed("Ruy Lopez", "1. e4 e5 2. Nf3 Nc6");
+    const [one, two] = await listCards(id);
+    await markDifficult(one);
+    await recordStruggle(two);
+    await recordStruggle(two);
+    const deck = await difficult();
+    renderPage(`/decks?deck=${deck.id}`);
+    await screen.findByRole("heading", { level: 1, name: "Difficult moves" });
+    const rows = await screen.findAllByRole("listitem");
+    const cardRows = rows.filter((row) => within(row).queryByRole("button", { name: "Edit" }));
+    expect(within(cardRows[0]).getByText("Gave trouble 2 times")).toBeInTheDocument();
+    expect(within(cardRows[1]).getByText("Gave trouble once")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Mark as difficult" })).not.toBeInTheDocument();
+  });
+
+  it("deletes a card from it with the usual question, leaving the original", async () => {
+    const id = await seed("Ruy Lopez", "1. e4 e5");
+    const [card] = await listCards(id);
+    await markDifficult(card);
+    const deck = await difficult();
+    renderPage(`/decks?deck=${deck.id}`);
+    await screen.findByRole("heading", { level: 1, name: "Difficult moves" });
+    await screen.findByRole("button", { name: "Edit" });
+    await click("Delete");
+    await click("Delete card");
+    await waitFor(async () => expect(await listCards(deck.id)).toHaveLength(0));
+    expect(await listCards(id)).toHaveLength(1);
   });
 });
