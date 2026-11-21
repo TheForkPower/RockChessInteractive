@@ -30,11 +30,13 @@ async function makeDeck(name: string, cards: CardDraft[]) {
   return made.deck.id;
 }
 
-function renderReview(query: string) {
+/** Most tests play in practice mode, where nothing is graded or saved. Pass `scheduled` for the real thing. */
+function renderReview(query: string, { scheduled = false, clock }: { scheduled?: boolean; clock?: () => number } = {}) {
+  const address = scheduled || !query.includes("deck=") ? query : `${query}&practice=1`;
   return render(
-    <MemoryRouter initialEntries={[`/review${query}`]}>
+    <MemoryRouter initialEntries={[`/review${address}`]}>
       <Routes>
-        <Route path="/review" element={<ReviewPage replyDelay={0} />} />
+        <Route path="/review" element={<ReviewPage replyDelay={0} clock={clock} />} />
         <Route path="/decks" element={<p>The decks page</p>} />
       </Routes>
     </MemoryRouter>,
@@ -58,7 +60,7 @@ describe("Review: a single-move card", () => {
     const id = await makeDeck("Openings", drafts("1. e4 e5", "moves"));
     renderReview(`?deck=${id}`);
     expect(await screen.findByRole("heading", { level: 2, name: "White to move" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 1, name: "Review: Openings" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Practise: Openings" })).toBeInTheDocument();
     expect(screen.getByText("Card 1 of 1")).toBeInTheDocument();
     expect(board()).toHaveAttribute("data-fen", START_FEN);
     expect(board()).toHaveAttribute("data-interactive", "turn");
@@ -154,7 +156,7 @@ describe("Review: a line card", () => {
     expect(await screen.findByText("Now find the next move")).toBeInTheDocument();
     expect(dropMove({ from: "g1", to: "f3" })).toBe(true);
     expect(await screen.findByText("Correct")).toBeInTheDocument();
-    const answer = within(screen.getByRole("region", { name: "Answer line" }));
+    const answer = within(await screen.findByRole("region", { name: "Answer line" }));
     expect(answer.getAllByRole("button").map((button) => button.getAttribute("aria-label"))).toEqual([
       "1. e4",
       "1... e5",
@@ -215,13 +217,13 @@ describe("Review: a session of several cards", () => {
     expect(screen.getByRole("link", { name: "Back to decks" })).toHaveAttribute("href", "/decks");
   });
 
-  it("starts over with Review again", async () => {
+  it("starts over with Practise again", async () => {
     const id = await makeDeck("One", drafts("1. e4 e5", "moves"));
     renderReview(`?deck=${id}`);
     await screen.findByText("Card 1 of 1");
     dropMove({ from: "e2", to: "e4" });
     await click("See results");
-    await click("Review again");
+    await click("Practise again");
     expect(await screen.findByText("Card 1 of 1")).toBeInTheDocument();
     expect(board()).toHaveAttribute("data-fen", START_FEN);
   });
@@ -265,7 +267,7 @@ describe("Learn mode", () => {
     const [card] = drafts("1. e4 e5 2. Nf3", "moves");
     const id = await makeDeck("Learn me", [{ ...card, explanation: "It takes the centre." }]);
     renderReview(`?deck=${id}&mode=learn`);
-    expect(await screen.findByRole("heading", { level: 1, name: "Learn: Learn me" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Practise: Learn me" })).toBeInTheDocument();
     expect(await screen.findByText("Study this card")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "1. e4" }).length).toBeGreaterThan(0);
     expect(screen.getByText("It takes the centre.")).toBeInTheDocument();
@@ -372,7 +374,7 @@ describe("The card's layout", () => {
   it("keeps the title, count and progress on one short line above the card", async () => {
     const id = await makeDeck("Two", [...drafts("1. e4 e5", "moves"), ...drafts("1. d4 d5", "moves")]);
     renderReview(`?deck=${id}`);
-    const title = await screen.findByRole("heading", { level: 1, name: "Review: Two" });
+    const title = await screen.findByRole("heading", { level: 1, name: "Practise: Two" });
     const row = title.closest("div")!.parentElement!;
     expect(within(row).getByText("Card 1 of 2")).toBeInTheDocument();
     expect(within(row).getByRole("button", { name: "End session" })).toBeInTheDocument();
@@ -465,5 +467,337 @@ describe("Review: the Difficult moves deck", () => {
     dropMove({ from: "d2", to: "d4" });
     expect(await screen.findByRole("button", { name: "Next card" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Mark as difficult" })).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Scheduled review: grades are asked for and saved.
+
+const DAY = 86_400_000;
+
+const gradeGroup = () => screen.findByRole("group", { name: "How did it go?" });
+const gradeButton = async (label: string) => within(await gradeGroup()).getByRole("button", { name: new RegExp(`^${label}`) });
+const intervalOf = async (label: string) => (await gradeButton(label)).querySelector(".interval")?.textContent;
+
+async function seedFastHistory(count: number, activeMs = 8000) {
+  const entries = Array.from({ length: count }, (_, i) => ({
+    id: `seed-${i}`,
+    cardId: `old-${i}`,
+    deckId: "old",
+    reviewedAt: 1000 + i,
+    rating: 3,
+    suggested: 3,
+    nudged: false,
+    outcome: "first-try",
+    mistakes: 0,
+    hintUsed: false,
+    revealed: false,
+    playerMoves: 1,
+    timing: { activeMs, idleMs: 0, hiddenMs: 0, elapsedMs: activeMs, firstMoveMs: activeMs, flags: [], reliable: true },
+    before: { state: 0, due: null, stability: null, difficulty: null },
+    after: { state: 2, due: 5000, stability: 3, difficulty: 5, scheduledDays: 3 },
+    elapsedDays: 0,
+    desiredRetention: 0.9,
+  }));
+  await db.reviews.bulkAdd(entries as never);
+}
+
+describe("Scheduled review: asking for a grade", () => {
+  it("shows four grades with real intervals once the answer is out, and no Next card button", async () => {
+    const id = await makeDeck("Openings", drafts("1. e4 e5", "moves"));
+    renderReview(`?deck=${id}`, { scheduled: true });
+    await screen.findByText("Card 1 of 1");
+    await play({ from: "e2", to: "e4" });
+    const group = await gradeGroup();
+    expect(within(group).getAllByRole("button").map((button) => button.textContent?.replace(/\d.*$/, ""))).toEqual(["Again", "Hard", "Good", "Easy"]);
+    for (const label of ["Again", "Hard", "Good", "Easy"]) expect(await intervalOf(label)).toMatch(/^\d+ (day|days|month|months)$/);
+    expect(screen.queryByRole("button", { name: "Next card" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "See results" })).not.toBeInTheDocument();
+  });
+
+  it("suggests Good for a first-try answer and says why", async () => {
+    const id = await makeDeck("Openings", drafts("1. e4 e5", "moves"));
+    renderReview(`?deck=${id}`, { scheduled: true });
+    await screen.findByText("Card 1 of 1");
+    await play({ from: "e2", to: "e4" });
+    expect(await screen.findByText(/Suggested: Good\. Right first time\./)).toBeInTheDocument();
+  });
+
+  it("saves the schedule and the grade that was pressed, then moves on", async () => {
+    const id = await makeDeck("Openings", drafts("1. e4 e5", "moves"));
+    renderReview(`?deck=${id}`, { scheduled: true });
+    await screen.findByText("Card 1 of 1");
+    await play({ from: "e2", to: "e4" });
+    const shown = await intervalOf("Good");
+    await userEvent.click(await gradeButton("Good"));
+    expect(await screen.findByRole("heading", { name: "You went through 1 card" })).toBeInTheDocument();
+
+    const [schedule] = await db.schedules.toArray();
+    expect(schedule.reps).toBe(1);
+    const [entry] = await db.reviews.toArray();
+    expect(entry).toMatchObject({ rating: 3, suggested: 3, outcome: "first-try", cardId: schedule.cardId });
+    const { formatInterval } = await import("../../domain/scheduling");
+    expect(shown).toBe(formatInterval((schedule.due - entry.reviewedAt) / DAY));
+  });
+
+  it("gives FSRS the grade the person chose, not the one suggested", async () => {
+    const id = await makeDeck("Openings", drafts("1. e4 e5", "moves"));
+    renderReview(`?deck=${id}`, { scheduled: true });
+    await screen.findByText("Card 1 of 1");
+    expect(dropMove({ from: "d2", to: "d4" })).toBe(false);
+    await play({ from: "e2", to: "e4" });
+    expect(await screen.findByText(/Suggested: Hard\. It took a hint or a second try\./)).toBeInTheDocument();
+    await userEvent.click(await gradeButton("Easy"));
+    await screen.findByRole("heading", { name: "You went through 1 card" });
+    const [entry] = await db.reviews.toArray();
+    expect(entry).toMatchObject({ rating: 4, suggested: 2, outcome: "with-help", mistakes: 1 });
+  });
+
+  it("suggests Again after the answer was shown", async () => {
+    const id = await makeDeck("Openings", drafts("1. e4 e5", "moves"));
+    renderReview(`?deck=${id}`, { scheduled: true });
+    await screen.findByText("Card 1 of 1");
+    dropMove({ from: "d2", to: "d4" });
+    await click("Show answer");
+    expect(await screen.findByText(/Suggested: Again\. You needed to see the answer\./)).toBeInTheDocument();
+  });
+
+  it("saves nothing in practice", async () => {
+    const id = await makeDeck("Openings", drafts("1. e4 e5", "moves"));
+    renderReview(`?deck=${id}`);
+    await screen.findByText("Card 1 of 1");
+    await play({ from: "e2", to: "e4" });
+    expect(await screen.findByRole("button", { name: "See results" })).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "How did it go?" })).not.toBeInTheDocument();
+    expect(await db.schedules.count()).toBe(0);
+    expect(await db.reviews.count()).toBe(0);
+  });
+
+  it("only counts a card once it has been graded", async () => {
+    const id = await makeDeck("Two", [...drafts("1. e4 e5", "moves"), ...drafts("1. d4 d5", "moves")]);
+    renderReview(`?deck=${id}`, { scheduled: true });
+    await screen.findByText("Card 1 of 2");
+    await play({ from: "e2", to: "e4" });
+    await gradeGroup();
+    await click("End session");
+    expect(await screen.findByRole("heading", { name: "Session ended" })).toBeInTheDocument();
+    expect(await db.schedules.count()).toBe(0);
+  });
+});
+
+describe("Scheduled review: timing", () => {
+  it("records how long the first move took, apart from the grade", async () => {
+    let now = 1_000_000;
+    const id = await makeDeck("Openings", drafts("1. e4 e5", "moves"));
+    renderReview(`?deck=${id}`, { scheduled: true, clock: () => now });
+    await screen.findByText("Card 1 of 1");
+    now += 5000;
+    await play({ from: "e2", to: "e4" });
+    await userEvent.click(await gradeButton("Good"));
+    await screen.findByRole("heading", { name: "You went through 1 card" });
+    const [entry] = await db.reviews.toArray();
+    expect(entry.timing).toMatchObject({ activeMs: 5000, idleMs: 0, hiddenMs: 0, firstMoveMs: 5000, flags: [], reliable: true });
+    expect(entry.rating).toBe(3);
+  });
+
+  it("doesn't count a long idle stretch as thinking, and flags the time", async () => {
+    let now = 1_000_000;
+    const id = await makeDeck("Openings", drafts("1. e4 e5", "moves"));
+    renderReview(`?deck=${id}`, { scheduled: true, clock: () => now });
+    await screen.findByText("Card 1 of 1");
+    now += 200_000;
+    await play({ from: "e2", to: "e4" });
+    expect(await screen.findByText(/The time wasn't counted: you were away or idle\./)).toBeInTheDocument();
+    await userEvent.click(await gradeButton("Good"));
+    await screen.findByRole("heading", { name: "You went through 1 card" });
+    const [entry] = await db.reviews.toArray();
+    expect(entry.timing).toMatchObject({ activeMs: 30_000, idleMs: 170_000, reliable: false, flags: ["idle"] });
+    expect(entry.rating).toBe(3);
+  });
+
+  it("keeps time with the tab hidden out of the thinking time", async () => {
+    let now = 1_000_000;
+    const id = await makeDeck("Openings", drafts("1. e4 e5", "moves"));
+    renderReview(`?deck=${id}`, { scheduled: true, clock: () => now });
+    await screen.findByText("Card 1 of 1");
+    const visibility = vi.spyOn(document, "visibilityState", "get");
+    now += 2000;
+    visibility.mockReturnValue("hidden");
+    document.dispatchEvent(new Event("visibilitychange"));
+    now += 60_000;
+    visibility.mockReturnValue("visible");
+    document.dispatchEvent(new Event("visibilitychange"));
+    now += 3000;
+    await play({ from: "e2", to: "e4" });
+    await userEvent.click(await gradeButton("Good"));
+    await screen.findByRole("heading", { name: "You went through 1 card" });
+    visibility.mockRestore();
+    const [entry] = await db.reviews.toArray();
+    expect(entry.timing).toMatchObject({ activeMs: 5000, hiddenMs: 60_000, flags: ["hidden"], reliable: false });
+  });
+
+  it("starts the clock when you start playing, not while you study", async () => {
+    let now = 1_000_000;
+    const id = await makeDeck("Openings", drafts("1. e4 e5", "moves"));
+    renderReview(`?deck=${id}&mode=learn`, { scheduled: true, clock: () => now });
+    await screen.findByText("Card 1 of 1");
+    now += 90_000;
+    await click("Play it from memory");
+    now += 4000;
+    await play({ from: "e2", to: "e4" });
+    await userEvent.click(await gradeButton("Good"));
+    await screen.findByRole("heading", { name: "You went through 1 card" });
+    const [entry] = await db.reviews.toArray();
+    expect(entry.timing).toMatchObject({ activeMs: 4000, reliable: true });
+  });
+
+  it("suggests Easy for a clearly quick answer once there is enough history, and still saves the grade pressed", async () => {
+    await seedFastHistory(10);
+    let now = 1_000_000;
+    const id = await makeDeck("Openings", drafts("1. e4 e5", "moves"));
+    renderReview(`?deck=${id}`, { scheduled: true, clock: () => now });
+    await screen.findByText("Card 1 of 1");
+    now += 1500;
+    await play({ from: "e2", to: "e4" });
+    expect(await screen.findByText(/Suggested: Easy\. Right first time, and quicker than usual\. Took 2 s\./)).toBeInTheDocument();
+    await userEvent.click(await gradeButton("Good"));
+    await screen.findByRole("heading", { name: "You went through 1 card" });
+    const entry = (await db.reviews.toArray()).find((item) => item.id !== undefined && !item.id.startsWith("seed-"));
+    expect(entry).toMatchObject({ rating: 3, suggested: 4, nudged: true });
+  });
+
+  it("leaves the suggestion alone when response time is switched off", async () => {
+    await seedFastHistory(10);
+    const { saveSettings } = await import("../../data/progress");
+    await saveSettings({ timeSignal: false });
+    let now = 1_000_000;
+    const id = await makeDeck("Openings", drafts("1. e4 e5", "moves"));
+    renderReview(`?deck=${id}`, { scheduled: true, clock: () => now });
+    await screen.findByText("Card 1 of 1");
+    now += 1500;
+    await play({ from: "e2", to: "e4" });
+    expect(await screen.findByText(/Suggested: Good\. Right first time\./)).toBeInTheDocument();
+  });
+
+  it("never lowers the suggestion for a slow answer", async () => {
+    await seedFastHistory(10);
+    let now = 1_000_000;
+    const id = await makeDeck("Openings", drafts("1. e4 e5", "moves"));
+    renderReview(`?deck=${id}`, { scheduled: true, clock: () => now });
+    await screen.findByText("Card 1 of 1");
+    now += 25_000;
+    await play({ from: "e2", to: "e4" });
+    expect(await screen.findByText(/Suggested: Good\. Right first time\. Took 25 s\./)).toBeInTheDocument();
+  });
+});
+
+describe("Scheduled review: what comes up", () => {
+  it("brings back a card that is due, with intervals worked from its history", async () => {
+    const id = await makeDeck("Openings", drafts("1. e4 e5", "moves"));
+    const [card] = await listCards(id);
+    const { recordReview } = await import("../../data/progress");
+    await recordReview({
+      card,
+      grade: "good",
+      suggested: "good",
+      nudged: false,
+      outcome: "first-try",
+      tally: { mistakes: 0, hintUsed: false, revealed: false, played: 1 },
+      playerMoves: 1,
+      timing: { shownAt: 0, firstMoveAt: 1, completedAt: 2, elapsedMs: 2, activeMs: 2, idleMs: 0, hiddenMs: 0, firstMoveActiveMs: 1, flags: [], reliable: true },
+      desiredRetention: 0.9,
+      now: Date.now() - 30 * DAY,
+    });
+    renderReview(`?deck=${id}`, { scheduled: true });
+    await screen.findByText("Card 1 of 1");
+    await play({ from: "e2", to: "e4" });
+    await userEvent.click(await gradeButton("Good"));
+    await screen.findByRole("heading", { name: "You went through 1 card" });
+    const reviews = await db.reviews.orderBy("reviewedAt").toArray();
+    expect(reviews).toHaveLength(2);
+    expect(reviews[1].before.due).toBe(reviews[0].after.due);
+    expect(reviews[1].elapsedDays).toBeGreaterThan(29);
+    expect((await db.schedules.get(card.id))?.reps).toBe(2);
+  });
+
+  it("says nothing is due when every card is waiting, and says when the next one comes", async () => {
+    const id = await makeDeck("Openings", drafts("1. e4 e5", "moves"));
+    const [card] = await listCards(id);
+    const { recordReview } = await import("../../data/progress");
+    await recordReview({
+      card,
+      grade: "good",
+      suggested: "good",
+      nudged: false,
+      outcome: "first-try",
+      tally: { mistakes: 0, hintUsed: false, revealed: false, played: 1 },
+      playerMoves: 1,
+      timing: { shownAt: 0, firstMoveAt: 1, completedAt: 2, elapsedMs: 2, activeMs: 2, idleMs: 0, hiddenMs: 0, firstMoveActiveMs: 1, flags: [], reliable: true },
+      desiredRetention: 0.9,
+    });
+    renderReview(`?deck=${id}`, { scheduled: true });
+    expect(await screen.findByText("Nothing due in Openings.")).toBeInTheDocument();
+    expect(screen.getByText(/The next card is due (today|tomorrow|in \d+ days)\./)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Practise anyway" })).toHaveAttribute("href", `/review?deck=${id}&practice=1`);
+    expect(screen.queryByText(/Card 1 of/)).not.toBeInTheDocument();
+  });
+
+  it("Learn brings only cards you haven't seen", async () => {
+    const id = await makeDeck("Mixed", [...drafts("1. e4 e5", "moves"), ...drafts("1. d4 d5", "moves")]);
+    const [seen] = await listCards(id);
+    const { recordReview } = await import("../../data/progress");
+    await recordReview({
+      card: seen,
+      grade: "good",
+      suggested: "good",
+      nudged: false,
+      outcome: "first-try",
+      tally: { mistakes: 0, hintUsed: false, revealed: false, played: 1 },
+      playerMoves: 1,
+      timing: { shownAt: 0, firstMoveAt: 1, completedAt: 2, elapsedMs: 2, activeMs: 2, idleMs: 0, hiddenMs: 0, firstMoveActiveMs: 1, flags: [], reliable: true },
+      desiredRetention: 0.9,
+    });
+    renderReview(`?deck=${id}&mode=learn`, { scheduled: true });
+    expect(await screen.findByText("Card 1 of 1")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Learn: Mixed" })).toBeInTheDocument();
+  });
+
+  it("says when there is nothing new to learn", async () => {
+    const id = await makeDeck("Openings", drafts("1. e4 e5", "moves"));
+    const [card] = await listCards(id);
+    const { recordReview } = await import("../../data/progress");
+    await recordReview({
+      card,
+      grade: "good",
+      suggested: "good",
+      nudged: false,
+      outcome: "first-try",
+      tally: { mistakes: 0, hintUsed: false, revealed: false, played: 1 },
+      playerMoves: 1,
+      timing: { shownAt: 0, firstMoveAt: 1, completedAt: 2, elapsedMs: 2, activeMs: 2, idleMs: 0, hiddenMs: 0, firstMoveActiveMs: 1, flags: [], reliable: true },
+      desiredRetention: 0.9,
+    });
+    renderReview(`?deck=${id}&mode=learn`, { scheduled: true });
+    expect(await screen.findByText("No new cards in Openings.")).toBeInTheDocument();
+  });
+
+  it("brings in a limited number of new cards at a time", async () => {
+    const moves = "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 6. Re1 b5 7. Bb3 d6 8. c3 O-O";
+    const long = [...drafts(moves, "moves", "w"), ...drafts(moves, "moves", "b")];
+    expect(long.length).toBeGreaterThan(10);
+    const id = await makeDeck("Long", long);
+    renderReview(`?deck=${id}`, { scheduled: true });
+    expect(await screen.findByText("Card 1 of 10")).toBeInTheDocument();
+  });
+
+  it("offers more after a session, and says when nothing is left", async () => {
+    const id = await makeDeck("Openings", drafts("1. e4 e5", "moves"));
+    renderReview(`?deck=${id}`, { scheduled: true });
+    await screen.findByText("Card 1 of 1");
+    await play({ from: "e2", to: "e4" });
+    await userEvent.click(await gradeButton("Good"));
+    await screen.findByRole("heading", { name: "You went through 1 card" });
+    await click("Review more");
+    expect(await screen.findByText("Nothing due in Openings.")).toBeInTheDocument();
   });
 });

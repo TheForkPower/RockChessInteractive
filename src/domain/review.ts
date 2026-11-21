@@ -15,6 +15,11 @@ export function planCard(card: Card): Step[] {
   });
 }
 
+/** How many moves of the answer are yours to find. */
+export function playerMoveCount(card: Card): number {
+  return planCard(card).filter((step) => step.mover === "you").length;
+}
+
 const sameMove = (expected: Pick<CardMove, "from" | "to" | "promotion">, attempt: MoveInput) =>
   expected.from === attempt.from && expected.to === attempt.to && (expected.promotion ?? undefined) === (attempt.promotion ?? undefined);
 

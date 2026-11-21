@@ -1,7 +1,8 @@
+import type { Grade } from "../domain/scheduling";
 import { Button } from "./Button";
 import type { ButtonVariant } from "./buttonClass";
 
-export type Grade = "again" | "hard" | "good" | "easy";
+export type { Grade };
 
 const grades: Record<Grade, { label: string; variant: ButtonVariant }> = {
   again: { label: "Again", variant: "danger" },
@@ -16,14 +17,26 @@ type GradeButtonProps = {
   interval: string;
   onSelect?: (grade: Grade) => void;
   disabled?: boolean;
+  /** Marks the grade the app suggests. The reason is given in text next to the buttons. */
+  suggested?: boolean;
 };
 
-export function GradeButton({ grade, interval, onSelect, disabled }: GradeButtonProps) {
+export function GradeButton({ grade, interval, onSelect, disabled, suggested }: GradeButtonProps) {
   const { label, variant } = grades[grade];
   return (
-    <Button variant={variant} className="btn-grade" disabled={disabled} onClick={() => onSelect?.(grade)}>
-      <span>{label}</span>
-      <span className="interval">{interval}</span>
-    </Button>
+    <div className="relative">
+      <Button variant={variant} className="btn-grade" disabled={disabled} onClick={() => onSelect?.(grade)}>
+        <span>{label}</span>
+        <span className="interval">{interval}</span>
+      </Button>
+      {suggested ? (
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full bg-ink px-2.5 py-0.5 text-xs font-bold text-white"
+        >
+          Suggested
+        </span>
+      ) : null}
+    </div>
   );
 }

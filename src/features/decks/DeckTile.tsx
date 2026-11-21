@@ -3,6 +3,7 @@ import type { DeckSummary } from "../../data/repo";
 import { colorOf, gradientOf } from "../../domain/deckColors";
 import { ChevronRightIcon } from "../../ui/Icons";
 import { Menu } from "../../ui/Menu";
+import { progressLine } from "./progressLine";
 
 export const pillClass =
   "relative z-10 inline-flex items-center gap-1 rounded-full bg-white px-4 py-2 font-display font-bold text-ink shadow-[0_3px_0_rgba(0,0,0,0.22)] transition-transform hover:bg-white/90 active:translate-y-px active:shadow-[0_2px_0_rgba(0,0,0,0.22)]";
@@ -91,6 +92,7 @@ export function DeckTile({ deck }: { deck: DeckSummary }) {
           {deck.name}
         </Link>
       </h2>
+      {deck.cardCount > 0 ? <p className="relative z-10 mt-1 font-semibold text-white/90">{progressLine(deck)}</p> : null}
       <div className="mt-4 flex flex-wrap gap-2">
         <PlayLinks deckId={deck.id} name={deck.name} cardCount={deck.cardCount} describedBy={note} />
       </div>
@@ -126,7 +128,7 @@ export function DifficultStrip({ deck }: { deck: DeckSummary }) {
             </Link>
           </h2>
           <p id={note} className="mt-0.5 text-sm text-white/90">
-            {deck.cardCount === 0 ? "This deck has no cards yet. Make some bad moves and it will be filled! :)" : `Fills itself as you practise. ${cards}.`}
+            {deck.cardCount === 0 ? "This deck has no cards yet. Make some bad moves and it will be filled! :)" : `Fills itself as you practise. ${cards}${deck.dueCount > 0 ? `, ${deck.dueCount} due` : ""}.`}
           </p>
         </div>
         {deck.cardCount > 0 ? (

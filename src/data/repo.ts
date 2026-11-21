@@ -50,17 +50,31 @@ export async function setDeckColor(id: string, color: string): Promise<Result<ob
 
 /** Deletes a deck and every card in it. */
 export async function deleteDeck(id: string): Promise<void> {
-  await db.transaction("rw", db.decks, db.cards, async () => {
+  await db.transaction("rw", [db.decks, db.cards, db.schedules, db.reviews], async () => {
     await db.cards.where("deckId").equals(id).delete();
+    await db.schedules.where("deckId").equals(id).delete();
+    await db.reviews.where("deckId").equals(id).delete();
     await db.decks.delete(id);
   });
 }
 
-export type DeckSummary = Deck & { cardCount: number };
+/** `dueCount` is cards whose time has come. `newCount` is cards never graded. */
+export type DeckSummary = Deck & { cardCount: number; dueCount: number; newCount: number };
 
-export async function listDecks(): Promise<DeckSummary[]> {
+export async function listDecks(now = Date.now()): Promise<DeckSummary[]> {
   const decks = await db.decks.orderBy("name").toArray();
-  return Promise.all(decks.map(async (deck) => ({ ...deck, cardCount: await db.cards.where("deckId").equals(deck.id).count() })));
+  return Promise.all(
+    decks.map(async (deck) => {
+      const cardIds = new Set(await db.cards.where("deckId").equals(deck.id).primaryKeys());
+      const schedules = (await db.schedules.where("deckId").equals(deck.id).toArray()).filter((item) => cardIds.has(item.cardId));
+      return {
+        ...deck,
+        cardCount: cardIds.size,
+        dueCount: schedules.filter((item) => item.due <= now).length,
+        newCount: cardIds.size - schedules.length,
+      };
+    }),
+  );
 }
 
 // ------------------------------------------------------------------ cards
@@ -124,15 +138,22 @@ export async function addCards(deckId: string, drafts: CardDraft[], source?: Omi
 }
 
 export async function updateCard(card: Card): Promise<void> {
-  await db.transaction("rw", db.cards, db.decks, async () => {
+  await db.transaction("rw", [db.cards, db.decks, db.schedules, db.reviews], async () => {
     const now = Date.now();
     await db.cards.put({ ...card, updatedAt: now });
     await db.decks.update(card.deckId, { updatedAt: now });
+    // A card moved to another deck takes its schedule and history with it.
+    await db.schedules.where("cardId").equals(card.id).modify({ deckId: card.deckId });
+    await db.reviews.where("cardId").equals(card.id).modify({ deckId: card.deckId });
   });
 }
 
 export async function deleteCard(id: string): Promise<void> {
-  await db.cards.delete(id);
+  await db.transaction("rw", [db.cards, db.schedules, db.reviews], async () => {
+    await db.cards.delete(id);
+    await db.schedules.delete(id);
+    await db.reviews.where("cardId").equals(id).delete();
+  });
 }
 
 /** Moves nothing and saves nothing: tells you whether IndexedDB works here. */

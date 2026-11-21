@@ -88,7 +88,7 @@ export function DesignPage() {
             <GradeButton grade="easy" interval="4 days" />
           </div>
           <p className="mt-4 text-sm text-ink-soft">
-            Sample intervals, for layout only. Real intervals come from the scheduler in milestone 4.
+            Sample intervals, for layout only.
           </p>
         </div>
       </Section>

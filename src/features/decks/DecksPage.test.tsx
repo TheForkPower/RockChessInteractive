@@ -484,3 +484,101 @@ describe("Decks page: Difficult moves", () => {
     expect(await listCards(id)).toHaveLength(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Progress: what is due, and what each card's schedule looks like.
+
+const gradeInput = (card: Awaited<ReturnType<typeof listCards>>[number], now: number) => ({
+  card,
+  grade: "good" as const,
+  suggested: "good" as const,
+  nudged: false,
+  outcome: "first-try" as const,
+  tally: { mistakes: 0, hintUsed: false, revealed: false, played: 1 },
+  playerMoves: 1,
+  timing: { shownAt: 0, firstMoveAt: 1, completedAt: 2, elapsedMs: 4200, activeMs: 4200, idleMs: 0, hiddenMs: 0, firstMoveActiveMs: 1, flags: [], reliable: true },
+  desiredRetention: 0.9,
+  now,
+});
+
+describe("Decks page: what is due", () => {
+  it("shows new cards on the tile, then due ones once their day comes", async () => {
+    const id = await seed("Open", "1. e4 e5 2. Nf3");
+    const { recordReview } = await import("../../data/progress");
+    const [first] = await listCards(id);
+    renderPage();
+    await screen.findByRole("heading", { name: "Open" });
+    expect(await screen.findByText("2 new")).toBeInTheDocument();
+
+    await recordReview(gradeInput(first, Date.now() - 40 * 86_400_000));
+    expect(await screen.findByText("1 due, 1 new")).toBeInTheDocument();
+  });
+
+  it("says nothing is due when every card is waiting", async () => {
+    const id = await seed("Open", "1. e4 e5");
+    const { recordReview } = await import("../../data/progress");
+    const [only] = await listCards(id);
+    await recordReview(gradeInput(only, Date.now()));
+    renderPage();
+    expect(await screen.findByText("Nothing due")).toBeInTheDocument();
+  });
+
+  it("marks each card as new or says when it is due, and shows its progress when opened", async () => {
+    const id = await seed("Open", "1. e4 e5 2. Nf3");
+    const { recordReview } = await import("../../data/progress");
+    const [first] = await listCards(id);
+    await recordReview(gradeInput(first, Date.now()));
+    await openDeck(id, "Open");
+    await screen.findAllByText("New.");
+    const rows = cardRows();
+    expect(rows.filter((row) => within(row).queryByText("New."))).toHaveLength(1);
+    const graded = rows.find((row) => within(row).queryByText(/^Due /));
+    if (!graded) throw new Error("graded card row not found");
+
+    await userEvent.click(within(graded).getByRole("button", { name: "Open" }));
+    const progress = within(within(graded).getByRole("region", { name: "Progress" }));
+    expect(progress.getByText("1 review")).toBeInTheDocument();
+    expect(progress.getByText("Recall chance now")).toBeInTheDocument();
+    expect(await progress.findByRole("table")).toBeInTheDocument();
+    expect(progress.getByText("Right first time")).toBeInTheDocument();
+    expect(progress.getByText("4 s")).toBeInTheDocument();
+    expect(progress.getByText("Good")).toBeInTheDocument();
+  });
+
+  it("says a card that hasn't been studied is new", async () => {
+    const id = await seed("Open", "1. e4 e5");
+    await openDeck(id, "Open");
+    await userEvent.click(screen.getByRole("button", { name: "Open" }));
+    expect(await screen.findByText("Not studied yet. It is new.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reset progress" })).not.toBeInTheDocument();
+  });
+
+  it("resets a card's progress after asking, which makes it new again", async () => {
+    const id = await seed("Open", "1. e4 e5");
+    const { recordReview } = await import("../../data/progress");
+    const [only] = await listCards(id);
+    await recordReview(gradeInput(only, Date.now()));
+    await openDeck(id, "Open");
+    await userEvent.click(screen.getByRole("button", { name: "Open" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Reset progress" }));
+    expect(screen.getByText(/It becomes a new card again, and its history is deleted/)).toBeInTheDocument();
+    expect(await db.schedules.count()).toBe(1);
+    const buttons = screen.getAllByRole("button", { name: "Reset progress" });
+    await userEvent.click(buttons[buttons.length - 1]);
+    expect(await screen.findByText("Not studied yet. It is new.")).toBeInTheDocument();
+    expect(await db.schedules.count()).toBe(0);
+    expect(await db.reviews.count()).toBe(0);
+  });
+
+  it("keeps the progress when you decide not to reset", async () => {
+    const id = await seed("Open", "1. e4 e5");
+    const { recordReview } = await import("../../data/progress");
+    const [only] = await listCards(id);
+    await recordReview(gradeInput(only, Date.now()));
+    await openDeck(id, "Open");
+    await userEvent.click(screen.getByRole("button", { name: "Open" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Reset progress" }));
+    await userEvent.click(screen.getByRole("button", { name: "Keep it" }));
+    expect(await db.schedules.count()).toBe(1);
+  });
+});

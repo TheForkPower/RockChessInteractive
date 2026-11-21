@@ -1,5 +1,5 @@
 import { useId, useMemo, useRef, useState, type DragEvent } from "react";
-import piecesUrl from "cm-chessboard/assets/pieces/standard.svg?url";
+import piecesUrl from "../../assets/pieces/meridian.svg?url";
 import { parseFen } from "../../domain/fen";
 import {
   castlingPossible,

@@ -1,49 +1,106 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, Navigate, useSearchParams } from "react-router";
 import { markDifficult, recordStruggle } from "../../data/difficult";
+import { getQueue, getSettings, NEW_PER_SESSION, recentMoveTimes, recordReview } from "../../data/progress";
 import { getDeck, listCards, STORAGE_ERROR } from "../../data/repo";
 import type { Deck } from "../../data/db";
 import type { Card } from "../../domain/cards";
 import { colorOf } from "../../domain/deckColors";
-import { isStruggle, OUTCOME_LABELS, type Outcome, type Tally } from "../../domain/review";
+import { isStruggle, OUTCOME_LABELS, playerMoveCount, type Outcome, type Tally } from "../../domain/review";
+import {
+  dueLabel,
+  formatInterval,
+  GRADE_LABELS,
+  GRADES,
+  previewGrades,
+  suggestGrade,
+  type Grade,
+  type Schedule,
+  type Suggestion,
+} from "../../domain/scheduling";
+import type { Settings } from "../../domain/settings";
+import { formatDuration, type Timing } from "../../domain/timing";
 import { Button, ButtonLink } from "../../ui/Button";
 import { Feedback } from "../../ui/Feedback";
 import { ChevronLeftIcon } from "../../ui/Icons";
 import { ReviewCard } from "./ReviewCard";
 
-type Loaded =
-  | { status: "loading" }
-  | { status: "error" }
-  | { status: "missing" }
-  | { status: "ready"; deck: Deck; cards: Card[] };
+type Ready = {
+  status: "ready";
+  deck: Deck;
+  /** The cards for this session, in order. */
+  cards: Card[];
+  /** Saved schedules of the due cards among them. */
+  schedules: Record<string, Schedule>;
+  settings: Settings;
+  /** Your earlier times per move, for the time-based suggestion. */
+  history: number[];
+  /** Every card in the deck, whether or not it is in this session. */
+  total: number;
+  /** When the soonest card that isn't due yet comes back, in words, e.g. "due tomorrow". */
+  nextDue: string | null;
+};
+
+type Loaded = { status: "loading" } | { status: "error" } | { status: "missing" } | Ready;
 
 const REPLY_DELAY_MS = 650;
+
+type FirstGo = {
+  outcome: Outcome;
+  tally: Tally;
+  timing: Timing;
+  playerMoves: number;
+  suggestion: Suggestion;
+  summary: string;
+  intervals: Record<Grade, string>;
+};
 
 type SessionProps = {
   deck: Deck;
   cards: Card[];
   mode: "review" | "learn";
+  /** True when grades are saved and cards are scheduled. False in practice, where nothing is saved. */
+  scheduled: boolean;
+  schedules: Record<string, Schedule>;
+  settings: Settings;
+  history: number[];
   replyDelay: number;
+  clock?: () => number;
   /** The back link and title, shown on the first line. */
   heading: ReactNode;
+  /** Asks the page for the next batch. */
+  onMore: () => void;
 };
 
-function Session({ deck, cards, mode, replyDelay, heading }: SessionProps) {
+function Session({ deck, cards, mode, scheduled, schedules, settings, history, replyDelay, clock, heading, onMore }: SessionProps) {
   const [index, setIndex] = useState(0);
   const [run, setRun] = useState(0);
   const [round, setRound] = useState(0);
-  const [results, setResults] = useState<Record<string, Outcome>>({});
+  const [results, setResults] = useState<Record<string, FirstGo>>({});
+  const [grades, setGrades] = useState<Record<string, Grade>>({});
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [ended, setEnded] = useState(false);
   const color = colorOf(deck);
-  const verb = mode === "learn" ? "Learn" : "Review";
+  const verb = scheduled ? (mode === "learn" ? "Learn" : "Review") : "Practise";
 
-  const done = Object.keys(results).length;
+  // A card counts once it has a result, or, when grades are saved, once it has been graded.
+  const counted = (id: string) => (scheduled ? Boolean(grades[id]) : Boolean(results[id]));
+  const done = cards.filter((item) => counted(item.id)).length;
   const card = cards[index];
 
-  function record(item: Card, outcome: Outcome, tally: Tally) {
+  function record(item: Card, outcome: Outcome, tally: Tally, timing: Timing) {
     // The first go at a card is the one that counts. Trying it again doesn't change it.
     if (results[item.id]) return;
-    setResults((previous) => (previous[item.id] ? previous : { ...previous, [item.id]: outcome }));
+    const playerMoves = playerMoveCount(item);
+    const suggestion = suggestGrade({ outcome, timing, playerMoves, history, useTime: settings.timeSignal });
+    const preview = previewGrades(schedules[item.id] ?? null, Date.now(), settings.desiredRetention);
+    const intervals = Object.fromEntries(GRADES.map((grade) => [grade, formatInterval(preview[grade].days)])) as Record<Grade, string>;
+    const took = timing.reliable ? ` Took ${formatDuration(timing.activeMs)}.` : "";
+    const summary = `Suggested: ${GRADE_LABELS[suggestion.grade]}. ${suggestion.reason}${took}`;
+    setResults((previous) =>
+      previous[item.id] ? previous : { ...previous, [item.id]: { outcome, tally, timing, playerMoves, suggestion, summary, intervals } },
+    );
     // Trouble on the first go puts the card in the Difficult moves deck. Failing to save it mustn't interrupt the session.
     if (isStruggle(tally)) recordStruggle(item).catch(() => {});
   }
@@ -53,6 +110,32 @@ function Session({ deck, cards, mode, replyDelay, heading }: SessionProps) {
     else {
       setIndex(index + 1);
       setRun(0);
+    }
+  }
+
+  async function grade(chosen: Grade) {
+    const first = results[card.id];
+    if (!first || saving) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await recordReview({
+        card,
+        grade: chosen,
+        suggested: first.suggestion.grade,
+        nudged: first.suggestion.nudged,
+        outcome: first.outcome,
+        tally: first.tally,
+        playerMoves: first.playerMoves,
+        timing: first.timing,
+        desiredRetention: settings.desiredRetention,
+      });
+      setGrades((previous) => ({ ...previous, [card.id]: chosen }));
+      next();
+    } catch {
+      setSaveError(`That grade didn't save. ${STORAGE_ERROR}`);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -66,8 +149,8 @@ function Session({ deck, cards, mode, replyDelay, heading }: SessionProps) {
 
   if (ended) {
     const counts: Record<Outcome, number> = { "first-try": 0, "with-help": 0, partial: 0, shown: 0 };
-    for (const outcome of Object.values(results)) counts[outcome] += 1;
-    const needsLook = cards.filter((item) => results[item.id] && results[item.id] !== "first-try");
+    for (const item of cards) if (counted(item.id)) counts[results[item.id].outcome] += 1;
+    const needsLook = cards.filter((item) => counted(item.id) && results[item.id].outcome !== "first-try");
     const skipped = cards.length - done;
     return (
       <div className="max-w-2xl">
@@ -96,7 +179,7 @@ function Session({ deck, cards, mode, replyDelay, heading }: SessionProps) {
               {needsLook.map((item) => (
                 <li key={item.id} className="panel p-4">
                   <p className="font-semibold">{item.prompt}</p>
-                  <p className="text-sm text-ink-soft">{OUTCOME_LABELS[results[item.id]]}</p>
+                  <p className="text-sm text-ink-soft">{OUTCOME_LABELS[results[item.id].outcome]}</p>
                 </li>
               ))}
             </ul>
@@ -104,8 +187,8 @@ function Session({ deck, cards, mode, replyDelay, heading }: SessionProps) {
         ) : null}
 
         <div className="mt-8 flex flex-wrap gap-3">
-          <Button size="lg" onClick={again}>
-            {verb} again
+          <Button size="lg" onClick={scheduled ? onMore : again}>
+            {scheduled ? `${verb} more` : `${verb} again`}
           </Button>
           <ButtonLink to="/decks" variant="secondary" size="lg">
             Back to decks
@@ -114,6 +197,12 @@ function Session({ deck, cards, mode, replyDelay, heading }: SessionProps) {
       </div>
     );
   }
+
+  const first = results[card.id];
+  const grading =
+    scheduled && first && !grades[card.id]
+      ? { suggestion: first.suggestion, summary: first.summary, intervals: first.intervals, onGrade: grade, saving, error: saveError }
+      : null;
 
   return (
     <div>
@@ -138,8 +227,11 @@ function Session({ deck, cards, mode, replyDelay, heading }: SessionProps) {
           card={card}
           mode={run > 0 ? "review" : mode}
           replyDelay={replyDelay}
+          clock={clock}
+          idleMs={settings.idleSeconds * 1000}
           isLast={index + 1 >= cards.length}
-          onFinished={(outcome, tally) => record(card, outcome, tally)}
+          grading={grading}
+          onFinished={(outcome, tally, timing) => record(card, outcome, tally, timing)}
           onMarkDifficult={deck.theme === "difficult" ? undefined : () => markDifficult(card)}
           onNext={next}
           onAgain={() => setRun((value) => value + 1)}
@@ -149,14 +241,20 @@ function Session({ deck, cards, mode, replyDelay, heading }: SessionProps) {
   );
 }
 
-type Props = { replyDelay?: number };
+type Props = { replyDelay?: number; clock?: () => number };
 
-/** /review?deck=ID plays a deck's cards one at a time. Add &mode=learn to see each answer first. */
-export function ReviewPage({ replyDelay = REPLY_DELAY_MS }: Props) {
+/**
+ * /review?deck=ID goes through what is due, then some new cards, and saves a grade for each.
+ * Add &mode=learn to meet only new cards, each with its answer first.
+ * Add &practice=1 to go through every card without saving anything.
+ */
+export function ReviewPage({ replyDelay = REPLY_DELAY_MS, clock }: Props) {
   const [params] = useSearchParams();
   const deckId = params.get("deck");
   const mode = params.get("mode") === "learn" ? "learn" : "review";
+  const practice = params.get("practice") === "1";
   const [loaded, setLoaded] = useState<Loaded>({ status: "loading" });
+  const [batch, setBatch] = useState(0);
 
   useEffect(() => {
     if (!deckId) return;
@@ -166,8 +264,17 @@ export function ReviewPage({ replyDelay = REPLY_DELAY_MS }: Props) {
         const deck = await getDeck(deckId);
         if (!alive) return;
         if (!deck) return setLoaded({ status: "missing" });
-        const cards = await listCards(deckId);
-        if (alive) setLoaded({ status: "ready", deck, cards });
+        const settings = await getSettings();
+        if (practice) {
+          const cards = await listCards(deckId);
+          if (alive) setLoaded({ status: "ready", deck, cards, schedules: {}, settings, history: [], total: cards.length, nextDue: null });
+          return;
+        }
+        const queue = await getQueue(deckId);
+        const history = await recentMoveTimes();
+        const fresh = queue.fresh.slice(0, NEW_PER_SESSION);
+        const cards = mode === "learn" ? fresh : [...queue.due, ...fresh];
+        if (alive) setLoaded({ status: "ready", deck, cards, schedules: queue.schedules, settings, history, total: queue.total, nextDue: queue.nextDue === null ? null : dueLabel(queue.nextDue, Date.now()).toLowerCase() });
       } catch {
         if (alive) setLoaded({ status: "error" });
       }
@@ -175,12 +282,13 @@ export function ReviewPage({ replyDelay = REPLY_DELAY_MS }: Props) {
     return () => {
       alive = false;
     };
-  }, [deckId]);
+  }, [deckId, mode, practice, batch]);
 
   if (!deckId) return <Navigate to="/decks" replace />;
 
-  const verb = mode === "learn" ? "Learn" : "Review";
+  const verb = practice ? "Practise" : mode === "learn" ? "Learn" : "Review";
   const title = loaded.status === "ready" ? `${verb}: ${loaded.deck.name}` : verb;
+  const playing = loaded.status === "ready" && loaded.cards.length > 0;
 
   const heading = (
     <div className="flex min-w-0 items-center gap-2">
@@ -197,9 +305,9 @@ export function ReviewPage({ replyDelay = REPLY_DELAY_MS }: Props) {
 
   return (
     <div>
-      {loaded.status === "ready" && loaded.cards.length > 0 ? null : heading}
+      {playing ? null : heading}
 
-      <div className={loaded.status === "ready" && loaded.cards.length > 0 ? "" : "mt-8"}>
+      <div className={playing ? "" : "mt-8"}>
         {loaded.status === "loading" ? <p className="text-ink-soft">Loading the cards…</p> : null}
         {loaded.status === "error" ? (
           <div className="max-w-xl">
@@ -213,14 +321,46 @@ export function ReviewPage({ replyDelay = REPLY_DELAY_MS }: Props) {
             That deck isn't here any more. <Link to="/decks" className="font-semibold underline underline-offset-4">Pick another deck</Link>.
           </p>
         ) : null}
-        {loaded.status === "ready" && loaded.cards.length === 0 ? (
+        {loaded.status === "ready" && loaded.total === 0 ? (
           <p className="max-w-xl text-lg">
-            This deck has no cards to {mode === "learn" ? "learn" : "review"}.{" "}
+            This deck has no cards to {mode === "learn" && !practice ? "learn" : "review"}.{" "}
             <Link to="/create" className="font-semibold underline underline-offset-4">Make some on the Create page</Link>.
           </p>
         ) : null}
+        {loaded.status === "ready" && loaded.total > 0 && loaded.cards.length === 0 ? (
+          <div className="max-w-xl">
+            <p className="text-lg font-semibold">{mode === "learn" ? `No new cards in ${loaded.deck.name}.` : `Nothing due in ${loaded.deck.name}.`}</p>
+            {loaded.nextDue !== null ? (
+              <p className="mt-1 text-lg text-ink-soft">The next card is {loaded.nextDue}.</p>
+            ) : null}
+            <div className="mt-6 flex flex-wrap gap-3">
+              <ButtonLink to={`/review?deck=${loaded.deck.id}&practice=1`} size="lg">
+                Practise anyway
+              </ButtonLink>
+              <ButtonLink to="/decks" variant="secondary" size="lg">
+                Back to decks
+              </ButtonLink>
+            </div>
+          </div>
+        ) : null}
         {loaded.status === "ready" && loaded.cards.length > 0 ? (
-          <Session key={`${loaded.deck.id}-${mode}`} deck={loaded.deck} cards={loaded.cards} mode={mode} replyDelay={replyDelay} heading={heading} />
+          <Session
+            key={`${loaded.deck.id}-${mode}-${practice}-${batch}`}
+            deck={loaded.deck}
+            cards={loaded.cards}
+            mode={mode}
+            scheduled={!practice}
+            schedules={loaded.schedules}
+            settings={loaded.settings}
+            history={loaded.history}
+            replyDelay={replyDelay}
+            clock={clock}
+            heading={heading}
+            onMore={() => {
+              setLoaded({ status: "loading" });
+              setBatch((value) => value + 1);
+            }}
+          />
         ) : null}
       </div>
     </div>

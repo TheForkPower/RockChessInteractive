@@ -5,7 +5,7 @@ import { PromotionDialog } from "cm-chessboard/src/extensions/promotion-dialog/P
 import "cm-chessboard/assets/chessboard.css";
 import "cm-chessboard/assets/extensions/markers/markers.css";
 import "cm-chessboard/assets/extensions/promotion-dialog/promotion-dialog.css";
-import piecesUrl from "cm-chessboard/assets/pieces/standard.svg?url";
+import piecesUrl from "../assets/pieces/meridian.svg?url";
 import markersUrl from "cm-chessboard/assets/extensions/markers/markers.svg?url";
 import "./board.css";
 import { Game, type MoveInput } from "../domain/game";

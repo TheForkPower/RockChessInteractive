@@ -2,9 +2,10 @@ import { useState, type FormEvent } from "react";
 import { Link } from "react-router";
 import { markDifficult } from "../../data/difficult";
 import { deleteCard, deleteDeck, renameDeck, setDeckColor, STORAGE_ERROR, updateCard, type DeckSummary } from "../../data/repo";
-import { useCards, useDecks } from "../../data/hooks";
+import { useCards, useDecks, useSchedules } from "../../data/hooks";
 import { answerText, CATEGORIES, cardToDraft, type Card, type CardDraft } from "../../domain/cards";
 import { colorOf, gradientOf } from "../../domain/deckColors";
+import { dueLabel } from "../../domain/scheduling";
 import { Button } from "../../ui/Button";
 import { Feedback } from "../../ui/Feedback";
 import { fieldClass } from "../../ui/Field";
@@ -12,8 +13,10 @@ import { ChevronLeftIcon } from "../../ui/Icons";
 import { Menu } from "../../ui/Menu";
 import { CardEditor, type DeckChoice } from "../cards/CardEditor";
 import { CardPreview } from "../cards/CardPreview";
+import { CardProgress } from "./CardProgress";
 import { ColorPicker } from "./ColorPicker";
 import { Checker, PlayLinks } from "./DeckTile";
+import { progressLine } from "./progressLine";
 
 export type DeckAction = "rename" | "colour" | "delete" | null;
 
@@ -36,6 +39,8 @@ type Props = {
 export function DeckDetail({ deck, action, onSettled, onGone }: Props) {
   const decks = useDecks();
   const cards = useCards(deck.id);
+  const schedules = useSchedules(deck.id);
+  const [now] = useState(() => Date.now());
   const color = colorOf(deck);
 
   const [openId, setOpenId] = useState<string | null>(null);
@@ -129,7 +134,10 @@ export function DeckDetail({ deck, action, onSettled, onGone }: Props) {
           {deck.theme === "difficult" ? <p className="text-sm font-semibold text-white/90">Fills itself as you practise</p> : null}
           <h1 className="text-4xl font-bold sm:text-5xl">{deck.name}</h1>
           {deck.description ? <p className="mt-3 max-w-prose text-lg">{deck.description}</p> : null}
-          <p className="mt-3 text-white/90">{count}</p>
+          <p className="mt-3 text-white/90">
+            {count}
+            {deck.cardCount > 0 ? <span>{`. ${progressLine(deck)}.`}</span> : null}
+          </p>
           <div className="mt-5 flex flex-wrap gap-2">
             <PlayLinks deckId={deck.id} name={deck.name} cardCount={deck.cardCount} describedBy={note} />
           </div>
@@ -271,6 +279,7 @@ export function DeckDetail({ deck, action, onSettled, onGone }: Props) {
                     <p className="line-clamp-2 font-display text-lg font-bold">{card.prompt}</p>
                     <p className="mt-1 truncate font-mono text-sm text-ink-soft">{cardSummary(card)}</p>
                     <p className="mt-1 truncate text-sm text-ink-soft">
+                      {schedules ? <span className="font-semibold">{schedules[card.id] ? dueLabel(schedules[card.id].due, now) : "New"}. </span> : null}
                       {category}
                       {card.tags.length > 0 ? `, ${card.tags.join(", ")}` : ""}
                     </p>
@@ -330,6 +339,7 @@ export function DeckDetail({ deck, action, onSettled, onGone }: Props) {
                 {open ? (
                   <div className="mt-6 border-t-2 border-line pt-6">
                     <CardPreview card={card} />
+                    <CardProgress cardId={card.id} schedule={schedules?.[card.id]} />
                   </div>
                 ) : null}
               </li>
